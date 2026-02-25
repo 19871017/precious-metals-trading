@@ -1,0 +1,136 @@
+/* ============================================
+ * 移动端响应式样式优化
+ * ============================================ */
+
+/* 移动端通用优化 */
+@media (max-width: 768px) {
+  /* 字体大小调整 */
+  body {
+    font-size: 14px;
+  }
+
+  /* 触摸友好的点击区域 */
+  button, .btn, a[role="button"] {
+    min-height: 44px;
+    min-touch-target: 44px;
+  }
+
+  /* 表格横向滚动 */
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 卡片内边距调整 */
+  .card-mobile-padding {
+    padding: 12px;
+  }
+
+  /* 图表高度优化 */
+  .chart-mobile {
+    height: 200px !important;
+  }
+
+  /* 弹窗/模态框响应式 */
+  .dialog-responsive {
+    width: 90vw !important;
+    max-width: 360px !important;
+  }
+
+  /* 网格布局响应式 */
+  .grid-responsive {
+    display: grid;
+    gap: 8px;
+  }
+
+  /* 两列网格 */
+  .grid-responsive-2 {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* 三列网格 - 移动端改为一列 */
+  .grid-responsive-3 {
+    grid-template-columns: 1fr;
+  }
+
+  /* 四列网格 - 移动端改为两列 */
+  .grid-responsive-4 {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* 五列网格 - 移动端改为一列 */
+  .grid-responsive-5 {
+    grid-template-columns: 1fr;
+  }
+
+  /* 文本截断 */
+  .text-truncate-mobile {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 两行文本截断 */
+  .text-truncate-2-mobile {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* 表格列隐藏 */
+  .hide-on-mobile {
+    display: none !important;
+  }
+
+  /* 表格列显示 */
+  .show-on-mobile {
+    display: table-cell !important;
+  }
+}
+
+/* 平板端优化 */
+@media (min-width: 769px) and (max-width: 1024px) {
+  /* 三列网格 - 平板端保持三列 */
+  .grid-responsive-3 {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  /* 四列网格 - 平板端改为两列 */
+  .grid-responsive-4 {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* 五列网格 - 平板端改为三列 */
+  .grid-responsive-5 {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+
+/* 大屏设备 */
+@media (min-width: 1025px) {
+  /* 恢复原始布局 */
+  .grid-responsive-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .grid-responsive-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .grid-responsive-5 {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+
+/* 横屏手机优化 */
+@media (max-width: 768px) and (orientation: landscape) {
+  /* 横屏时调整某些元素的布局 */
+  .landscape-stack {
+    flex-direction: column !important;
+  }
+
+  .chart-mobile {
+    height: 150px !important;
+  }
+}

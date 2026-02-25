@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>API测试</title>
+</head>
+<body>
+  <h1>API 测试</h1>
+  <div id="result">加载中...</div>
+
+  <script>
+    async function testAPI() {
+      const resultDiv = document.getElementById('result');
+      const symbols = ['DAX', 'NQ', 'HSI', 'MHSI', 'GOLD', 'USOIL'];
+      let html = '<table border="1"><tr><th>品种</th><th>价格</th><th>涨跌</th><th>状态</th></tr>';
+
+      for (const symbol of symbols) {
+        try {
+          const response = await fetch(`http://localhost:3001/shuhai/quote?code=${symbol}`);
+          const data = await response.json();
+
+          if (data.code === 0 && data.data) {
+            html += `<tr>
+              <td>${symbol}</td>
+              <td>${data.data.price}</td>
+              <td>${data.data.changePercent}%</td>
+              <td>✅</td>
+            </tr>`;
+          } else {
+            html += `<tr><td>${symbol}</td><td>-</td><td>-</td><td>❌</td></tr>`;
+          }
+        } catch (error) {
+          html += `<tr><td>${symbol}</td><td>-</td><td>-</td><td>❌ ${error.message}</td></tr>`;
+        }
+      }
+
+      html += '</table>';
+      resultDiv.innerHTML = html;
+    }
+
+    testAPI();
+  </script>
+</body>
+</html>

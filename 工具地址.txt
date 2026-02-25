@@ -1,0 +1,27 @@
+youtube播放地址：https://youtu.be/du1G5dG1qPQ
+
+流量中转平台推荐： https://g.m123.org
+GIA线路VPS推荐： https://d.m123.org
+AT&T高质量住宅IP推荐： https://v.m123.org
+相关教程：
+专线中转教程：https://youtu.be/gTfOYuU-29U
+零基础节点搭建：https://youtu.be/SpxTFes1B8U
+
+相关指令
+查询IP信息：https://ipinfo.io
+ip欺诈值查询：https://scamalytics.com/ip
+国家字母代码：https://zh.wikipedia.org/wiki/ISO_3166-1
+搜索任意国家：https://www.shodan.io/search/facet?facet=isp&query=http.html%3Aassets%2Fqs%2Fqs.min.js+country%3A
+搭建X-UI：bash <(curl -Ls https://raw.githubusercontent.com/vaxilu/x-ui/master/install.sh)
+专线中转：https://g.880805.xyz
+国家公共DNS：https://public-dns.info/#countries
+
+
+国内个人签：70U（一个月内掉签包换）
+国内企业签：100U（不掉签终身用）
+国外企业签：170U（不掉签终身用）
+
+绕大陆DNS双保：60U（保三月）
+海外全球单保：   220U（保六个月）
+
+切记:所有签名一旦售出不退不换！！！看好再联系下单！！！！
