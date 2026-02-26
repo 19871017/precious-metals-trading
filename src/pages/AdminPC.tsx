@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  Card,
   Table,
   Input,
   Button,
@@ -12,11 +11,9 @@ import {
   Tooltip,
   Tag,
   DatePicker,
-  Form,
   InputNumber,
-  Space,
   Divider,
-  Message
+  MessagePlugin
 } from 'tdesign-react';
 import {
   DashboardIcon,
@@ -29,14 +26,11 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   CheckCircleIcon,
-  CloseCircleIcon,
-  TimeIcon,
   RefreshIcon,
   AddIcon,
   EditIcon,
   DeleteIcon,
-  DownloadIcon,
-  UploadIcon
+  DownloadIcon
 } from 'tdesign-icons-react';
 import { formatCurrency } from '../utils/format';
 import { adminApi } from '../services/admin';
@@ -93,15 +87,35 @@ const mockFinance = [
   { id: 'TXN003', user: 'user003', type: 'deposit', amount: 100000, method: 'usdt', status: 'completed', time: '2024-02-22 14:30:00' }
 ];
 
-export default function AdminPC() {
+interface AdminPCProps {
+  onLogout?: () => void;
+}
+
+export default function AdminPC({ onLogout }: AdminPCProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [activeMenu, setActiveMenu] = useState('dashboard');
-  const [userData, setUserData] = useState({
-    name: '管理员',
-    avatar: '',
-    role: 'Super Admin'
+  const [userData, setUserData] = useState(() => {
+    // 从独立的adminUser获取管理员信息
+    try {
+      const adminUser = localStorage.getItem('adminUser');
+      if (adminUser) {
+        const user = JSON.parse(adminUser);
+        return {
+          name: user.name || '管理员',
+          avatar: '',
+          role: '超级管理员'
+        };
+      }
+    } catch (error) {
+      console.error('解析管理员信息失败:', error);
+    }
+    return {
+      name: '管理员',
+      avatar: '',
+      role: '超级管理员'
+    };
   });
 
   // 各模块状态
@@ -112,13 +126,23 @@ export default function AdminPC() {
   const [commissionStats, setCommissionStats] = useState<any>({});
   const [loading, setLoading] = useState(false);
 
-  // 手续费设置状态
-  const [feeSettings, setFeeSettings] = useState({
-    open_rate: 0.002,
-    close_rate: 0.002,
-    min_amount: 5,
-    swap_long: 0.5,
-    swap_short: -0.3
+  // 手续费设置状态 - 从 localStorage 加载
+  const [feeSettings, setFeeSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('admin_fee_settings');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (error) {
+      console.error('加载手续费设置失败:', error);
+    }
+    return {
+      open_rate: 0.002,
+      close_rate: 0.002,
+      min_amount: 5,
+      swap_long: 0.5,
+      swap_short: -0.3
+    };
   });
 
   // 根据路由设置激活菜单
@@ -129,14 +153,21 @@ export default function AdminPC() {
     }
   }, [location]);
 
-  // 数据加载函数
+  // 数据加载函数 - 暂时使用模拟数据
   const loadProductsData = async () => {
     try {
       setLoading(true);
-      const data = await adminApi.product.getList();
+      // const data = await adminApi.product.getList();
+      // 暂时使用模拟数据
+      const data = [
+        { id: 1, code: 'XAUUSD', name: '国际黄金', type: 'FOREX', category: '贵金属', pricePrecision: 2, volumePrecision: 2, minVolume: 0.01, maxLeverage: 100, commissionRate: 0.0005, status: 'active' },
+        { id: 2, code: 'XAGUSD', name: '国际白银', type: 'FOREX', category: '贵金属', pricePrecision: 3, volumePrecision: 2, minVolume: 0.01, maxLeverage: 100, commissionRate: 0.0003, status: 'active' },
+        { id: 3, code: 'AU2406', name: '沪金主力', type: 'FUTURES', category: '贵金属期货', pricePrecision: 1, volumePrecision: 1, minVolume: 1, maxLeverage: 10, commissionRate: 0.0001, status: 'active' }
+      ];
       setProducts(data || []);
     } catch (error) {
-      Message.error('加载产品列表失败');
+      console.error('加载产品列表失败:', error);
+      // MessagePlugin.error('加载产品列表失败');
     } finally {
       setLoading(false);
     }
@@ -145,10 +176,19 @@ export default function AdminPC() {
   const loadAgentsData = async () => {
     try {
       setLoading(true);
-      const data = await adminApi.agent.getList();
+      // const data = await adminApi.agent.getList();
+      // 暂时使用模拟数据
+      const data = {
+        list: [
+          { id: 1, agentCode: 'AG001', name: '张代理', phone: '138****1111', level: 1, referralCount: 25, totalCommission: 15000, balance: 8000, status: 'active', createdAt: '2024-01-10 10:00:00' },
+          { id: 2, agentCode: 'AG002', name: '李代理', phone: '139****2222', level: 2, referralCount: 12, totalCommission: 8500, balance: 5000, status: 'active', createdAt: '2024-01-15 14:30:00' },
+          { id: 3, agentCode: 'AG003', name: '王代理', phone: '137****3333', level: 1, referralCount: 18, totalCommission: 12000, balance: 6500, status: 'inactive', createdAt: '2024-01-20 09:15:00' }
+        ]
+      };
       setAgents(data?.list || []);
     } catch (error) {
-      Message.error('加载代理列表失败');
+      console.error('加载代理列表失败:', error);
+      // MessagePlugin.error('加载代理列表失败');
     } finally {
       setLoading(false);
     }
@@ -157,10 +197,19 @@ export default function AdminPC() {
   const loadPositionsData = async () => {
     try {
       setLoading(true);
-      const data = await adminApi.position.getList();
+      // const data = await adminApi.position.getList();
+      // 暂时使用模拟数据
+      const data = {
+        list: [
+          { id: 'POS001', userId: 'user001', orderId: 'ORD001', symbol: 'XAUUSD', direction: 'LONG', openPrice: 2035.50, currentPrice: 2038.20, quantity: 0.5, leverage: 10, marginUsed: 10177.50, unrealizedPnl: 1350, liquidationPrice: 2020.00, status: 'OPEN' },
+          { id: 'POS002', userId: 'user002', orderId: 'ORD002', symbol: 'XAGUSD', direction: 'SHORT', openPrice: 22.85, currentPrice: 22.90, quantity: 1.0, leverage: 20, marginUsed: 1142.50, unrealizedPnl: -50, liquidationPrice: 23.50, status: 'OPEN' },
+          { id: 'POS003', userId: 'user003', orderId: 'ORD003', symbol: 'AU2406', direction: 'LONG', openPrice: 505.80, currentPrice: 508.50, quantity: 2.0, leverage: 10, marginUsed: 10116.00, unrealizedPnl: 5400, liquidationPrice: 490.00, status: 'OPEN' }
+        ]
+      };
       setPositions(data?.list || []);
     } catch (error) {
-      Message.error('加载持仓列表失败');
+      console.error('加载持仓列表失败:', error);
+      // MessagePlugin.error('加载持仓列表失败');
     } finally {
       setLoading(false);
     }
@@ -169,14 +218,28 @@ export default function AdminPC() {
   const loadCommissionData = async () => {
     try {
       setLoading(true);
-      const [recordsData, statsData] = await Promise.all([
-        adminApi.commission.getRecords(),
-        adminApi.commission.getStats()
-      ]);
+      // const [recordsData, statsData] = await Promise.all([
+      //   adminApi.commission.getRecords(),
+      //   adminApi.commission.getStats()
+      // ]);
+      // 暂时使用模拟数据
+      const recordsData = {
+        records: [
+          { id: 1, agentId: 'AG001', userId: 'user001', commission: 150, volume: 50, rate: 0.003, status: 'settled', createdAt: '2024-02-20 10:00:00' },
+          { id: 2, agentId: 'AG002', userId: 'user002', commission: 80, volume: 40, rate: 0.002, status: 'settled', createdAt: '2024-02-21 14:30:00' },
+          { id: 3, agentId: 'AG001', userId: 'user003', commission: 200, volume: 100, rate: 0.002, status: 'pending', createdAt: '2024-02-22 09:00:00' }
+        ]
+      };
+      const statsData = {
+        totalCommission: 158000,
+        totalVolume: 15800,
+        agentCount: 25
+      };
       setCommissionRecords(recordsData?.records || []);
       setCommissionStats(statsData || {});
     } catch (error) {
-      Message.error('加载分佣数据失败');
+      console.error('加载分佣数据失败:', error);
+      // MessagePlugin.error('加载分佣数据失败');
     } finally {
       setLoading(false);
     }
@@ -192,42 +255,36 @@ export default function AdminPC() {
       loadPositionsData();
     } else if (activeMenu === 'commission') {
       loadCommissionData();
-    } else if (activeMenu === 'settings') {
-      loadFeeSettings();
     }
   }, [activeMenu]);
-
-  // 加载手续费设置
-  const loadFeeSettings = async () => {
-    try {
-      const fees = await adminApi.fees.get();
-      setFeeSettings({
-        open_rate: parseFloat(fees.open_rate?.value) || 0.002,
-        close_rate: parseFloat(fees.close_rate?.value) || 0.002,
-        min_amount: parseFloat(fees.min_amount?.value) || 5,
-        swap_long: parseFloat(fees.swap_long?.value) || 0.5,
-        swap_short: parseFloat(fees.swap_short?.value) || -0.3
-      });
-    } catch (error) {
-      logger.error('加载手续费设置失败:', error);
-    }
-  };
 
   // 保存手续费设置
   const saveFeeSettings = async () => {
     try {
-      await adminApi.fees.update(feeSettings);
-      Message.success('手续费设置已保存');
+      // 保存到 localStorage
+      localStorage.setItem('admin_fee_settings', JSON.stringify(feeSettings));
+      MessagePlugin.success('手续费设置已保存');
     } catch (error) {
-      Message.error('保存失败，请重试');
+      MessagePlugin.error('保存失败，请重试');
     }
   };
 
   const handleLogout = () => {
     Dialog.confirm({
       header: '确认退出',
-      body: '您确定要退出登录吗？',
-      onConfirm: () => navigate('/')
+      body: '您确定要退出后台管理系统吗？',
+      onConfirm: () => {
+        // 如果传入了 onLogout 回调，使用它
+        if (onLogout) {
+          onLogout();
+        } else {
+          // 否则自己处理退出逻辑
+          localStorage.removeItem('adminToken');
+          localStorage.removeItem('adminUser');
+        }
+        // 跳转到后台登录页
+        navigate('/');
+      }
     });
   };
 
@@ -235,84 +292,202 @@ export default function AdminPC() {
   const renderDashboard = () => (
     <div className="space-y-6">
       {/* 统计卡片 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-5">
         {mockDashboardData.stats.map((stat, index) => (
-          <Card key={index} className="!border-0 !shadow-sm hover:!shadow-md transition-shadow">
-            <div className="p-5">
-              <div className="flex items-start justify-between mb-3">
-                <div className="w-12 h-12 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${stat.color}15` }}>
-                  <stat.icon size="24px" style={{ color: stat.color }} />
-                </div>
-                <Tag theme={stat.change.includes('+') ? 'success' : 'danger'} shape="round" size="small">
-                  {stat.change}
-                </Tag>
+          <div
+            key={index}
+            style={{
+              background: '#ffffff',
+              borderRadius: '16px',
+              padding: '24px',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+              border: '1px solid #e5e7eb',
+              transition: 'all 0.3s ease',
+              cursor: 'pointer'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.boxShadow = '0 12px 40px rgba(0, 0, 0, 0.12)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.08)';
+            }}
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '14px',
+                background: 'linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <stat.icon size="28px" style={{ color: stat.color }} />
               </div>
-              <div className="text-2xl font-bold text-gray-900 mb-1">{stat.value}</div>
-              <div className="text-sm text-gray-500">{stat.title}</div>
+              <Tag
+                theme={stat.change.includes('+') ? 'success' : 'danger'}
+                shape="round"
+                size="small"
+                style={{ fontWeight: 500 }}
+              >
+                {stat.change}
+              </Tag>
             </div>
-          </Card>
+            <div className="text-3xl font-bold text-gray-900 mb-2" style={{ letterSpacing: '-0.5px' }}>
+              {stat.value}
+            </div>
+            <div className="text-sm text-gray-500" style={{ fontWeight: 500 }}>{stat.title}</div>
+          </div>
         ))}
       </div>
 
       {/* 快捷操作 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* 待处理事项 */}
-        <Card className="!border-0 !shadow-sm" title="待处理事项">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <WalletIcon size="20px" className="text-blue-600" />
-                <span className="text-gray-700">待审核充值</span>
-              </div>
-              <Badge count={mockDashboardData.pendingDeposits} theme="primary" />
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            padding: '24px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+            border: '1px solid #e5e7eb'
+          }}
+        >
+          <div className="flex items-center gap-3 mb-5">
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '10px',
+              background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <WalletIcon size="20px" style={{ color: '#ffffff' }} />
             </div>
-            <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
+            <h3 className="text-lg font-semibold text-gray-900">待处理事项</h3>
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)' }}>
               <div className="flex items-center gap-3">
-                <WalletIcon size="20px" className="text-orange-600" />
-                <span className="text-gray-700">待审核提现</span>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  background: 'rgba(245, 158, 11, 0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <WalletIcon size="18px" style={{ color: '#d97706' }} />
+                </div>
+                <span className="text-gray-700 font-medium">待审核充值</span>
               </div>
-              <Badge count={mockDashboardData.pendingWithdrawals} theme="warning" />
+              <Badge count={mockDashboardData.pendingDeposits} theme="warning" />
+            </div>
+            <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'linear-gradient(135deg, #fecaca 0%, #fca5a5 100%)' }}>
+              <div className="flex items-center gap-3">
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  background: 'rgba(239, 68, 68, 0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <WalletIcon size="18px" style={{ color: '#dc2626' }} />
+                </div>
+                <span className="text-gray-700 font-medium">待审核提现</span>
+              </div>
+              <Badge count={mockDashboardData.pendingWithdrawals} theme="danger" />
             </div>
           </div>
-        </Card>
+        </div>
 
         {/* 系统状态 */}
-        <Card className="!border-0 !shadow-sm" title="系统状态">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-3 bg-green-50 rounded-lg text-center">
-              <div className="text-sm text-gray-500 mb-1">服务器</div>
-              <div className="flex items-center justify-center gap-1 text-green-600">
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            padding: '24px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+            border: '1px solid #e5e7eb'
+          }}
+        >
+          <div className="flex items-center gap-3 mb-5">
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '10px',
+              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <CheckCircleIcon size="20px" style={{ color: '#ffffff' }} />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900">系统状态</h3>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 rounded-xl text-center" style={{ background: 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)' }}>
+              <div className="text-xs text-gray-600 mb-2 font-medium">服务器</div>
+              <div className="flex items-center justify-center gap-2 text-green-600">
                 <CheckCircleIcon size="16px" />
-                <span className="text-sm font-medium">正常</span>
+                <span className="text-sm font-bold">正常</span>
               </div>
             </div>
-            <div className="p-3 bg-green-50 rounded-lg text-center">
-              <div className="text-sm text-gray-500 mb-1">数据库</div>
-              <div className="flex items-center justify-center gap-1 text-green-600">
+            <div className="p-4 rounded-xl text-center" style={{ background: 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)' }}>
+              <div className="text-xs text-gray-600 mb-2 font-medium">数据库</div>
+              <div className="flex items-center justify-center gap-2 text-green-600">
                 <CheckCircleIcon size="16px" />
-                <span className="text-sm font-medium">正常</span>
+                <span className="text-sm font-bold">正常</span>
               </div>
             </div>
-            <div className="p-3 bg-green-50 rounded-lg text-center">
-              <div className="text-sm text-gray-500 mb-1">Redis</div>
-              <div className="flex items-center justify-center gap-1 text-green-600">
+            <div className="p-4 rounded-xl text-center" style={{ background: 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)' }}>
+              <div className="text-xs text-gray-600 mb-2 font-medium">Redis</div>
+              <div className="flex items-center justify-center gap-2 text-green-600">
                 <CheckCircleIcon size="16px" />
-                <span className="text-sm font-medium">正常</span>
+                <span className="text-sm font-bold">正常</span>
               </div>
             </div>
-            <div className="p-3 bg-green-50 rounded-lg text-center">
-              <div className="text-sm text-gray-500 mb-1">API</div>
-              <div className="flex items-center justify-center gap-1 text-green-600">
+            <div className="p-4 rounded-xl text-center" style={{ background: 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)' }}>
+              <div className="text-xs text-gray-600 mb-2 font-medium">API</div>
+              <div className="flex items-center justify-center gap-2 text-green-600">
                 <CheckCircleIcon size="16px" />
-                <span className="text-sm font-medium">正常</span>
+                <span className="text-sm font-bold">正常</span>
               </div>
             </div>
           </div>
-        </Card>
+        </div>
       </div>
 
       {/* 最近订单 */}
-      <Card className="!border-0 !shadow-sm" title="最近订单">
+      <div
+        style={{
+          background: '#ffffff',
+          borderRadius: '16px',
+          padding: '24px',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+          border: '1px solid #e5e7eb'
+        }}
+      >
+        <div className="flex items-center gap-3 mb-5">
+          <div style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: '10px',
+            background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <ChartIcon size="20px" style={{ color: '#ffffff' }} />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">最近订单</h3>
+        </div>
         <Table
           columns={[
             { colKey: 'id', title: '订单号', width: 150 },
@@ -347,20 +522,42 @@ export default function AdminPC() {
           size="small"
           pagination={false}
         />
-      </Card>
+      </div>
     </div>
   );
 
   // 渲染用户管理
   const renderUsers = () => (
-    <Card className="!border-0 !shadow-sm" title="用户列表">
+    <div
+      style={{
+        background: '#ffffff',
+        borderRadius: '16px',
+        padding: '24px',
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+        border: '1px solid #e5e7eb'
+      }}
+    >
+      <div className="flex items-center gap-3 mb-5">
+        <div style={{
+          width: '40px',
+          height: '40px',
+          borderRadius: '10px',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <UserIcon size="20px" style={{ color: '#ffffff' }} />
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900">用户列表</h3>
+      </div>
       <div className="mb-4 flex gap-4">
         <Input placeholder="搜索用户名/手机号" style={{ width: 250 }} clearable />
         <Select placeholder="用户状态" clearable style={{ width: 150 }}>
           <Select.Option value="active">正常</Select.Option>
           <Select.Option value="disabled">禁用</Select.Option>
         </Select>
-        <Button theme="primary" icon={<UserIcon size="16px" />}>
+        <Button theme="primary" icon={<UserIcon size="16px" />} style={{ borderRadius: '10px' }}>
           新增用户
         </Button>
       </div>
@@ -419,12 +616,34 @@ export default function AdminPC() {
         size="small"
         pagination={{ defaultPageSize: 10, total: 100 }}
       />
-    </Card>
+    </div>
   );
 
   // 渲染订单管理
   const renderOrders = () => (
-    <Card className="!border-0 !shadow-sm" title="订单管理">
+    <div
+      style={{
+        background: '#ffffff',
+        borderRadius: '16px',
+        padding: '24px',
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+        border: '1px solid #e5e7eb'
+      }}
+    >
+      <div className="flex items-center gap-3 mb-5">
+        <div style={{
+          width: '40px',
+          height: '40px',
+          borderRadius: '10px',
+          background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <ChartIcon size="20px" style={{ color: '#ffffff' }} />
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900">订单管理</h3>
+      </div>
       <div className="mb-4 flex gap-4 items-center">
         <Input placeholder="搜索订单号/用户" style={{ width: 250 }} clearable />
         <Select placeholder="订单状态" clearable style={{ width: 150 }}>
@@ -432,7 +651,7 @@ export default function AdminPC() {
           <Select.Option value="closed">已平仓</Select.Option>
         </Select>
         <DatePicker placeholder="选择日期范围" style={{ width: 250 }} />
-        <Button theme="primary" icon={<RefreshIcon size="16px" />}>
+        <Button theme="primary" icon={<RefreshIcon size="16px" />} style={{ borderRadius: '10px' }}>
           刷新
         </Button>
       </div>
@@ -502,12 +721,34 @@ export default function AdminPC() {
         size="small"
         pagination={{ defaultPageSize: 10, total: 156 }}
       />
-    </Card>
+    </div>
   );
 
   // 渲染财务管理
   const renderFinance = () => (
-    <Card className="!border-0 !shadow-sm" title="财务管理">
+    <div
+      style={{
+        background: '#ffffff',
+        borderRadius: '16px',
+        padding: '24px',
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+        border: '1px solid #e5e7eb'
+      }}
+    >
+      <div className="flex items-center gap-3 mb-5">
+        <div style={{
+          width: '40px',
+          height: '40px',
+          borderRadius: '10px',
+          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <WalletIcon size="20px" style={{ color: '#ffffff' }} />
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900">财务管理</h3>
+      </div>
       <div className="mb-4 flex gap-4 items-center">
         <Input placeholder="搜索流水号/用户" style={{ width: 250 }} clearable />
         <Select placeholder="交易类型" clearable style={{ width: 150 }}>
@@ -586,68 +827,104 @@ export default function AdminPC() {
         size="small"
         pagination={{ defaultPageSize: 10, total: 50 }}
       />
-    </Card>
+    </div>
   );
 
   // 渲染系统设置
   const renderSettings = () => (
     <div className="space-y-6">
-      <Card className="!border-0 !shadow-sm" title="基本设置">
-        <div className="space-y-4 max-w-2xl">
-          <div className="flex items-center justify-between py-3 border-b">
-            <div>
-              <div className="text-sm font-medium text-gray-900">维护模式</div>
-              <div className="text-xs text-gray-500 mt-1">开启后普通用户无法访问系统</div>
+      {/* 基本设置 */}
+      <div
+        style={{
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          borderRadius: '16px',
+          padding: '24px',
+          boxShadow: '0 10px 40px rgba(102, 126, 234, 0.15)'
+        }}
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <SettingIcon size="24px" style={{ color: '#ffffff' }} />
+          <h3 className="text-xl font-semibold text-white">基本设置</h3>
+        </div>
+        <div className="space-y-3" style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px' }}>
+          <div className="flex items-center justify-between py-2">
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-gray-900 mb-1">维护模式</div>
+              <div className="text-xs text-gray-500">开启后普通用户无法访问系统</div>
             </div>
-            <Switch defaultValue={false} size="large" />
+            <Switch defaultValue={false} size="large" className="!ml-4" />
           </div>
-          <div className="flex items-center justify-between py-3 border-b">
-            <div>
-              <div className="text-sm font-medium text-gray-900">允许注册</div>
-              <div className="text-xs text-gray-500 mt-1">是否开放用户注册功能</div>
+          <div className="flex items-center justify-between py-2" style={{ borderTop: '1px solid #f0f0f0', paddingTop: '16px' }}>
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-gray-900 mb-1">允许注册</div>
+              <div className="text-xs text-gray-500">是否开放用户注册功能</div>
             </div>
-            <Switch defaultValue={true} size="large" />
+            <Switch defaultValue={true} size="large" className="!ml-4" />
           </div>
-          <div className="flex items-center justify-between py-3">
-            <div>
-              <div className="text-sm font-medium text-gray-900">允许交易</div>
-              <div className="text-xs text-gray-500 mt-1">是否允许用户进行交易操作</div>
+          <div className="flex items-center justify-between py-2" style={{ borderTop: '1px solid #f0f0f0', paddingTop: '16px' }}>
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-gray-900 mb-1">允许交易</div>
+              <div className="text-xs text-gray-500">是否允许用户进行交易操作</div>
             </div>
-            <Switch defaultValue={true} size="large" />
+            <Switch defaultValue={true} size="large" className="!ml-4" />
           </div>
         </div>
-      </Card>
+      </div>
 
-      <Card className="!border-0 !shadow-sm" title="交易设置">
-        <div className="space-y-4 max-w-2xl">
-          <div className="flex items-center justify-between py-3 border-b">
-            <div>
-              <div className="text-sm font-medium text-gray-900">最大杠杆</div>
-              <div className="text-xs text-gray-500 mt-1">用户可使用的最大杠杆倍数</div>
-            </div>
-            <div className="text-lg font-bold text-blue-600 font-mono">100x</div>
+      {/* 交易设置 */}
+      <div
+        style={{
+          background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+          borderRadius: '16px',
+          padding: '24px',
+          boxShadow: '0 10px 40px rgba(79, 172, 254, 0.15)'
+        }}
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <ChartIcon size="24px" style={{ color: '#ffffff' }} />
+          <h3 className="text-xl font-semibold text-white">交易设置</h3>
+        </div>
+        <div className="grid grid-cols-3 gap-4" style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px' }}>
+          <div className="text-center p-4 rounded-xl" style={{ background: 'linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%)' }}>
+            <div className="text-xs text-gray-500 mb-2">最大杠杆</div>
+            <div className="text-2xl font-bold" style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>100x</div>
           </div>
-          <div className="flex items-center justify-between py-3 border-b">
-            <div>
-              <div className="text-sm font-medium text-gray-900">最小充值金额</div>
-              <div className="text-xs text-gray-500 mt-1">单次充值最低金额</div>
-            </div>
-            <div className="text-lg font-bold text-gray-900 font-mono">$100</div>
+          <div className="text-center p-4 rounded-xl" style={{ background: 'linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%)' }}>
+            <div className="text-xs text-gray-500 mb-2">最小充值</div>
+            <div className="text-2xl font-bold text-gray-900">$100</div>
           </div>
-          <div className="flex items-center justify-between py-3">
-            <div>
-              <div className="text-sm font-medium text-gray-900">最小提现金额</div>
-              <div className="text-xs text-gray-500 mt-1">单次提现最低金额</div>
-            </div>
-            <div className="text-lg font-bold text-gray-900 font-mono">$100</div>
+          <div className="text-center p-4 rounded-xl" style={{ background: 'linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%)' }}>
+            <div className="text-xs text-gray-500 mb-2">最小提现</div>
+            <div className="text-2xl font-bold text-gray-900">$100</div>
           </div>
         </div>
-      </Card>
+      </div>
 
-      <Card className="!border-0 !shadow-sm" title="手续费设置" subtitle="设置平台交易手续费，这是平台的主要收入来源">
-        <Form layout="vertical" className="max-w-2xl">
-          <Form.Item label="开仓手续费率" help="开仓时收取的手续费比例（小数形式，例如0.002表示0.2%）">
-            <div className="flex items-center gap-4">
+      {/* 手续费设置 */}
+      <div
+        style={{
+          background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+          borderRadius: '16px',
+          padding: '24px',
+          boxShadow: '0 10px 40px rgba(240, 147, 251, 0.15)'
+        }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <WalletIcon size="24px" style={{ color: '#ffffff' }} />
+            <div>
+              <h3 className="text-xl font-semibold text-white">手续费设置</h3>
+              <p className="text-xs text-white/80 mt-1">设置平台交易手续费，这是平台的主要收入来源</p>
+            </div>
+          </div>
+        </div>
+        <div className="space-y-5" style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '24px' }}>
+          <div className="flex items-center gap-6">
+            <div className="flex-1">
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                开仓手续费率
+                <span className="block text-xs text-gray-500 mt-1 font-normal">开仓时收取的手续费比例（小数形式）</span>
+              </label>
               <InputNumber
                 placeholder="0.002"
                 min={0}
@@ -658,14 +935,19 @@ export default function AdminPC() {
                 onChange={(value) => setFeeSettings({ ...feeSettings, open_rate: value })}
                 style={{ width: 200 }}
               />
-              <span className="text-sm text-gray-500">
-                当前值: <span className="font-bold text-blue-600">{(feeSettings.open_rate * 100).toFixed(2)}%</span>
-              </span>
             </div>
-          </Form.Item>
+            <div className="px-6 py-3 rounded-xl" style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}>
+              <div className="text-xs text-white/80 mb-1">当前值</div>
+              <div className="text-2xl font-bold text-white">{(feeSettings.open_rate * 100).toFixed(2)}%</div>
+            </div>
+          </div>
 
-          <Form.Item label="平仓手续费率" help="平仓时收取的手续费比例（小数形式，例如0.002表示0.2%）">
-            <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
+            <div className="flex-1">
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                平仓手续费率
+                <span className="block text-xs text-gray-500 mt-1 font-normal">平仓时收取的手续费比例（小数形式）</span>
+              </label>
               <InputNumber
                 placeholder="0.002"
                 min={0}
@@ -676,14 +958,19 @@ export default function AdminPC() {
                 onChange={(value) => setFeeSettings({ ...feeSettings, close_rate: value })}
                 style={{ width: 200 }}
               />
-              <span className="text-sm text-gray-500">
-                当前值: <span className="font-bold text-blue-600">{(feeSettings.close_rate * 100).toFixed(2)}%</span>
-              </span>
             </div>
-          </Form.Item>
+            <div className="px-6 py-3 rounded-xl" style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}>
+              <div className="text-xs text-white/80 mb-1">当前值</div>
+              <div className="text-2xl font-bold text-white">{(feeSettings.close_rate * 100).toFixed(2)}%</div>
+            </div>
+          </div>
 
-          <Form.Item label="最小手续费金额" help="每笔交易的最低手续费，单位：美元">
-            <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
+            <div className="flex-1">
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                最小手续费金额
+                <span className="block text-xs text-gray-500 mt-1 font-normal">每笔交易的最低手续费，单位：美元</span>
+              </label>
               <InputNumber
                 placeholder="5"
                 min={0}
@@ -693,14 +980,19 @@ export default function AdminPC() {
                 onChange={(value) => setFeeSettings({ ...feeSettings, min_amount: value })}
                 style={{ width: 200 }}
               />
-              <span className="text-sm text-gray-500">
-                当前值: <span className="font-bold text-gray-900">${feeSettings.min_amount}</span>
-              </span>
             </div>
-          </Form.Item>
+            <div className="px-6 py-3 rounded-xl" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+              <div className="text-xs text-white/80 mb-1">当前值</div>
+              <div className="text-2xl font-bold text-white">${feeSettings.min_amount}</div>
+            </div>
+          </div>
 
-          <Form.Item label="多头隔夜费" help="持有做多头寸过夜时收取的费用（美元/手/天），可以为负数表示返费">
-            <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
+            <div className="flex-1">
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                多头隔夜费
+                <span className="block text-xs text-gray-500 mt-1 font-normal">持有做多头寸过夜时收取的费用（美元/手/天）</span>
+              </label>
               <InputNumber
                 placeholder="0.5"
                 min={-10}
@@ -711,16 +1003,21 @@ export default function AdminPC() {
                 onChange={(value) => setFeeSettings({ ...feeSettings, swap_long: value })}
                 style={{ width: 200 }}
               />
-              <span className="text-sm text-gray-500">
-                当前值: <span className={`font-bold ${feeSettings.swap_long >= 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  {feeSettings.swap_long >= 0 ? '+' : ''}${feeSettings.swap_long}
-                </span>
-              </span>
             </div>
-          </Form.Item>
+            <div className={`px-6 py-3 rounded-xl ${feeSettings.swap_long >= 0 ? 'bg-red-50' : 'bg-green-50'}`}>
+              <div className="text-xs text-gray-500 mb-1">当前值</div>
+              <div className={`text-2xl font-bold ${feeSettings.swap_long >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                {feeSettings.swap_long >= 0 ? '+' : ''}${feeSettings.swap_long}
+              </div>
+            </div>
+          </div>
 
-          <Form.Item label="空头隔夜费" help="持有做空头寸过夜时收取的费用（美元/手/天），可以为负数表示返费">
-            <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
+            <div className="flex-1">
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                空头隔夜费
+                <span className="block text-xs text-gray-500 mt-1 font-normal">持有做空头寸过夜时收取的费用（美元/手/天）</span>
+              </label>
               <InputNumber
                 placeholder="-0.3"
                 min={-10}
@@ -731,35 +1028,79 @@ export default function AdminPC() {
                 onChange={(value) => setFeeSettings({ ...feeSettings, swap_short: value })}
                 style={{ width: 200 }}
               />
-              <span className="text-sm text-gray-500">
-                当前值: <span className={`font-bold ${feeSettings.swap_short >= 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  {feeSettings.swap_short >= 0 ? '+' : ''}${feeSettings.swap_short}
-                </span>
-              </span>
             </div>
-          </Form.Item>
-
-          <Divider />
-
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="text-sm text-blue-800">
-              <div className="font-medium mb-2">手续费计算说明：</div>
-              <ul className="list-disc list-inside space-y-1 text-xs">
-                <li>开仓手续费 = 交易金额 × 开仓手续费率</li>
-                <li>平仓手续费 = 交易金额 × 平仓手续费率</li>
-                <li>实际手续费 = 计算手续费和最小手续费中的较大值</li>
-                <li>隔夜费每天结算一次，过夜持仓会产生</li>
-              </ul>
+            <div className={`px-6 py-3 rounded-xl ${feeSettings.swap_short >= 0 ? 'bg-red-50' : 'bg-green-50'}`}>
+              <div className="text-xs text-gray-500 mb-1">当前值</div>
+              <div className={`text-2xl font-bold ${feeSettings.swap_short >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                {feeSettings.swap_short >= 0 ? '+' : ''}${feeSettings.swap_short}
+              </div>
             </div>
           </div>
-        </Form>
-      </Card>
 
-      <div className="flex justify-end gap-3">
-        <Button size="large" variant="outline" onClick={loadFeeSettings}>
+          <Divider style={{ margin: '24px 0' }} />
+
+          <div style={{
+            background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
+            border: '1px solid #bae6fd',
+            borderRadius: '12px',
+            padding: '16px'
+          }}>
+            <div className="flex items-start gap-3">
+              <div style={{
+                width: '32px',
+                height: '32px',
+                background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <CheckCircleIcon size="18px" style={{ color: '#ffffff' }} />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-gray-900 mb-2">手续费计算说明</div>
+                <ul className="space-y-1.5 text-xs text-gray-600">
+                  <li>• 开仓手续费 = 交易金额 × 开仓手续费率</li>
+                  <li>• 平仓手续费 = 交易金额 × 平仓手续费率</li>
+                  <li>• 实际手续费 = 计算手续费和最小手续费中的较大值</li>
+                  <li>• 隔夜费每天结算一次，过夜持仓会产生</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-3 mt-6">
+        <Button
+          size="large"
+          variant="outline"
+          onClick={() => {
+            setFeeSettings({
+              open_rate: 0.002,
+              close_rate: 0.002,
+              min_amount: 5,
+              swap_long: 0.5,
+              swap_short: -0.3
+            });
+            MessagePlugin.info('已重置为默认值');
+          }}
+          style={{ borderRadius: '10px' }}
+        >
           重置
         </Button>
-        <Button theme="primary" size="large" onClick={saveFeeSettings}>
+        <Button
+          theme="primary"
+          size="large"
+          onClick={saveFeeSettings}
+          style={{
+            borderRadius: '10px',
+            background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+            border: 'none',
+            boxShadow: '0 4px 15px rgba(240, 147, 251, 0.3)'
+          }}
+        >
           保存手续费设置
         </Button>
       </div>
@@ -768,7 +1109,29 @@ export default function AdminPC() {
 
   // 渲染产品管理
   const renderProducts = () => (
-      <Card className="!border-0 !shadow-sm" title="产品管理">
+      <div
+        style={{
+          background: '#ffffff',
+          borderRadius: '16px',
+          padding: '24px',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+          border: '1px solid #e5e7eb'
+        }}
+      >
+        <div className="flex items-center gap-3 mb-5">
+          <div style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: '10px',
+            background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <ShopIcon size="20px" style={{ color: '#ffffff' }} />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">产品管理</h3>
+        </div>
         <div className="mb-4 flex gap-4">
           <Input placeholder="搜索产品代码/名称" style={{ width: 250 }} clearable />
           <Select placeholder="产品分类" clearable style={{ width: 150 }}>
@@ -779,7 +1142,7 @@ export default function AdminPC() {
             <Select.Option value="active">启用</Select.Option>
             <Select.Option value="inactive">停用</Select.Option>
           </Select>
-          <Button theme="primary" icon={<AddIcon size="16px" />} onClick={() => Message.info('添加产品功能开发中')}>
+          <Button theme="primary" icon={<AddIcon size="16px" />} style={{ borderRadius: '10px' }} onClick={() => MessagePlugin.info('添加产品功能开发中')}>
             新增产品
           </Button>
         </div>
@@ -856,12 +1219,34 @@ export default function AdminPC() {
           loading={loading}
           pagination={{ defaultPageSize: 10 }}
         />
-      </Card>
+      </div>
   );
 
   // 渲染代理管理
   const renderAgents = () => (
-      <Card className="!border-0 !shadow-sm" title="代理管理">
+      <div
+        style={{
+          background: '#ffffff',
+          borderRadius: '16px',
+          padding: '24px',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+          border: '1px solid #e5e7eb'
+        }}
+      >
+        <div className="flex items-center gap-3 mb-5">
+          <div style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: '10px',
+            background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <UserIcon size="20px" style={{ color: '#ffffff' }} />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">代理管理</h3>
+        </div>
         <div className="mb-4 flex gap-4">
           <Input placeholder="搜索代理姓名/手机号" style={{ width: 250 }} clearable />
           <Select placeholder="代理等级" clearable style={{ width: 150 }}>
@@ -873,7 +1258,7 @@ export default function AdminPC() {
             <Select.Option value="active">正常</Select.Option>
             <Select.Option value="inactive">停用</Select.Option>
           </Select>
-          <Button theme="primary" icon={<AddIcon size="16px" />} onClick={() => Message.info('添加代理功能开发中')}>
+          <Button theme="primary" icon={<AddIcon size="16px" />} style={{ borderRadius: '10px' }} onClick={() => MessagePlugin.info('添加代理功能开发中')}>
             新增代理
           </Button>
         </div>
@@ -935,12 +1320,34 @@ export default function AdminPC() {
           loading={loading}
           pagination={{ defaultPageSize: 10 }}
         />
-      </Card>
+      </div>
   );
 
   // 渲染持仓管理
   const renderPositions = () => (
-      <Card className="!border-0 !shadow-sm" title="持仓管理">
+      <div
+        style={{
+          background: '#ffffff',
+          borderRadius: '16px',
+          padding: '24px',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+          border: '1px solid #e5e7eb'
+        }}
+      >
+        <div className="flex items-center gap-3 mb-5">
+          <div style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: '10px',
+            background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <ChartIcon size="20px" style={{ color: '#ffffff' }} />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">持仓管理</h3>
+        </div>
         <div className="mb-4 flex gap-4">
           <Input placeholder="搜索用户ID/订单号" style={{ width: 250 }} clearable />
           <Select placeholder="品种" clearable style={{ width: 150 }}>
@@ -952,10 +1359,10 @@ export default function AdminPC() {
             <Select.Option value="LONG">做多</Select.Option>
             <Select.Option value="SHORT">做空</Select.Option>
           </Select>
-          <Button theme="default" icon={<RefreshIcon size="16px" />} onClick={loadPositionsData}>
+          <Button theme="default" icon={<RefreshIcon size="16px" />} style={{ borderRadius: '10px' }} onClick={loadPositionsData}>
             刷新
           </Button>
-          <Button theme="warning" icon={<DownloadIcon size="16px" />}>
+          <Button theme="warning" icon={<DownloadIcon size="16px" />} style={{ borderRadius: '10px' }}>
             导出数据
           </Button>
         </div>
@@ -1049,41 +1456,87 @@ export default function AdminPC() {
           loading={loading}
           pagination={{ defaultPageSize: 10 }}
         />
-      </Card>
+      </div>
   );
 
   // 渲染分佣管理
   const renderCommission = () => (
       <div className="space-y-6">
         {/* 统计卡片 */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="!border-0 !shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            padding: '24px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+            border: '1px solid #e5e7eb'
+          }}>
             <div className="p-4">
               <div className="text-sm text-gray-500 mb-2">总分佣金额</div>
               <div className="text-2xl font-bold text-gray-900">{formatCurrency(commissionStats.totalCommission || 0)}</div>
             </div>
-          </Card>
-          <Card className="!border-0 !shadow-sm">
+          </div>
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            padding: '24px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+            border: '1px solid #e5e7eb'
+          }}>
             <div className="p-4">
               <div className="text-sm text-gray-500 mb-2">交易总量</div>
               <div className="text-2xl font-bold text-blue-600">{(commissionStats.totalVolume || 0).toFixed(2)} 手</div>
             </div>
-          </Card>
-          <Card className="!border-0 !shadow-sm">
+          </div>
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            padding: '24px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+            border: '1px solid #e5e7eb'
+          }}>
             <div className="p-4">
               <div className="text-sm text-gray-500 mb-2">分佣记录数</div>
               <div className="text-2xl font-bold text-purple-600">{commissionRecords.length || 0}</div>
             </div>
-          </Card>
-          <Card className="!border-0 !shadow-sm">
+          </div>
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            padding: '24px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+            border: '1px solid #e5e7eb'
+          }}>
             <div className="p-4">
               <div className="text-sm text-gray-500 mb-2">活跃代理</div>
               <div className="text-2xl font-bold text-green-600">{commissionStats.agentCount || 0}</div>
             </div>
-          </Card>
+          </div>
         </div>
 
-        <Card className="!border-0 !shadow-sm" title="分佣记录">
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            padding: '24px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+            border: '1px solid #e5e7eb'
+          }}
+        >
+          <div className="flex items-center gap-3 mb-5">
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '10px',
+              background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <WalletIcon size="20px" style={{ color: '#ffffff' }} />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900">分佣记录</h3>
+          </div>
           <div className="mb-4 flex gap-4">
             <Input placeholder="搜索代理ID/用户ID" style={{ width: 250 }} clearable />
             <Select placeholder="状态" clearable style={{ width: 120 }}>
@@ -1092,10 +1545,10 @@ export default function AdminPC() {
             </Select>
             <DatePicker placeholder="开始日期" clearable style={{ width: 150 }} />
             <DatePicker placeholder="结束日期" clearable style={{ width: 150 }} />
-            <Button theme="primary" icon={<RefreshIcon size="16px" />} onClick={loadCommissionData}>
+            <Button theme="primary" icon={<RefreshIcon size="16px" />} style={{ borderRadius: '10px' }} onClick={loadCommissionData}>
               刷新
             </Button>
-            <Button theme="default" icon={<DownloadIcon size="16px" />}>
+            <Button theme="default" icon={<DownloadIcon size="16px" />} style={{ borderRadius: '10px' }}>
               导出
             </Button>
           </div>
@@ -1149,7 +1602,7 @@ export default function AdminPC() {
             loading={loading}
             pagination={{ defaultPageSize: 10 }}
           />
-        </Card>
+        </div>
       </div>
   );
 
@@ -1157,28 +1610,72 @@ export default function AdminPC() {
   const renderRisk = () => {
     return (
       <div className="space-y-6">
-        <Card className="!border-0 !shadow-sm" title="风控概览">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="p-4 bg-red-50 rounded-lg">
-              <div className="text-sm text-gray-500 mb-2">高风险用户</div>
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            padding: '24px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+            border: '1px solid #e5e7eb'
+          }}
+        >
+          <div className="flex items-center gap-3 mb-5">
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '10px',
+              background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <SettingIcon size="20px" style={{ color: '#ffffff' }} />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900">风控概览</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+            <div className="p-4 rounded-xl text-center" style={{ background: 'linear-gradient(135deg, #fecaca 0%, #fca5a5 100%)' }}>
+              <div className="text-sm text-gray-700 mb-2 font-medium">高风险用户</div>
               <div className="text-3xl font-bold text-red-600">12</div>
             </div>
-            <div className="p-4 bg-orange-50 rounded-lg">
-              <div className="text-sm text-gray-500 mb-2">预警用户</div>
+            <div className="p-4 rounded-xl text-center" style={{ background: 'linear-gradient(135deg, #fed7aa 0%, #fdba74 100%)' }}>
+              <div className="text-sm text-gray-700 mb-2 font-medium">预警用户</div>
               <div className="text-3xl font-bold text-orange-600">45</div>
             </div>
-            <div className="p-4 bg-yellow-50 rounded-lg">
-              <div className="text-sm text-gray-500 mb-2">今日强平</div>
-              <div className="text-3xl font-bold text-yellow-600">3</div>
+            <div className="p-4 rounded-xl text-center" style={{ background: 'linear-gradient(135deg, #fecaca 0%, #fca5a5 100%)' }}>
+              <div className="text-sm text-gray-700 mb-2 font-medium">今日强平</div>
+              <div className="text-3xl font-bold text-red-600">3</div>
             </div>
-            <div className="p-4 bg-green-50 rounded-lg">
-              <div className="text-sm text-gray-500 mb-2">安全用户</div>
+            <div className="p-4 rounded-xl text-center" style={{ background: 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)' }}>
+              <div className="text-sm text-gray-700 mb-2 font-medium">安全用户</div>
               <div className="text-3xl font-bold text-green-600">8,523</div>
             </div>
           </div>
-        </Card>
+        </div>
 
-        <Card className="!border-0 !shadow-sm" title="高风险持仓">
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            padding: '24px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+            border: '1px solid #e5e7eb'
+          }}
+        >
+          <div className="flex items-center gap-3 mb-5">
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '10px',
+              background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <ChartIcon size="20px" style={{ color: '#ffffff' }} />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900">高风险持仓</h3>
+          </div>
           <div className="mb-4 flex gap-4">
             <Select placeholder="风险等级" clearable style={{ width: 150 }}>
               <Select.Option value="danger">高危</Select.Option>
@@ -1188,10 +1685,10 @@ export default function AdminPC() {
               <Select.Option value="XAUUSD">国际黄金</Select.Option>
               <Select.Option value="XAGUSD">国际白银</Select.Option>
             </Select>
-            <Button theme="primary" icon={<RefreshIcon size="16px" />}>
+            <Button theme="primary" icon={<RefreshIcon size="16px" />} style={{ borderRadius: '10px' }}>
               刷新
             </Button>
-            <Button theme="warning" icon={<DownloadIcon size="16px" />}>
+            <Button theme="warning" icon={<DownloadIcon size="16px" />} style={{ borderRadius: '10px' }}>
               导出报告
             </Button>
           </div>
@@ -1266,9 +1763,31 @@ export default function AdminPC() {
             size="small"
             pagination={{ defaultPageSize: 10 }}
           />
-        </Card>
+        </div>
 
-        <Card className="!border-0 !shadow-sm" title="风控设置">
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            padding: '24px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+            border: '1px solid #e5e7eb'
+          }}
+        >
+          <div className="flex items-center gap-3 mb-5">
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '10px',
+              background: 'linear-gradient(135deg, #64748b 0%, #475569 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <SettingIcon size="20px" style={{ color: '#ffffff' }} />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900">风控设置</h3>
+          </div>
           <div className="space-y-4 max-w-3xl">
             <div className="flex items-center justify-between py-3 border-b">
               <div>
@@ -1300,11 +1819,11 @@ export default function AdminPC() {
             </div>
           </div>
           <div className="mt-6 flex justify-end">
-            <Button theme="primary" size="large">
+            <Button theme="primary" size="large" style={{ borderRadius: '10px' }}>
               保存设置
             </Button>
           </div>
-        </Card>
+        </div>
       </div>
     );
   };
@@ -1338,7 +1857,7 @@ export default function AdminPC() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-white flex">
       {/* 左侧菜单栏 */}
       <div className={`${collapsed ? 'w-20' : 'w-64'} bg-white border-r border-gray-200 transition-all duration-300 flex flex-col`}>
         {/* Logo区域 */}
@@ -1429,3 +1948,5 @@ export default function AdminPC() {
     </div>
   );
 }
+
+

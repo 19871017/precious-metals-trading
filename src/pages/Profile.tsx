@@ -214,7 +214,7 @@ export default function Profile() {
 
           {/* 后台管理入口（管理员可见） */}
           <button
-            onClick={() => navigate('/admin')}
+            onClick={() => window.location.href = '/admin-entry.html'}
             className="w-full bg-gradient-to-r from-amber-900/30 to-amber-800/30 border border-amber-700/50 rounded-xl p-4 flex items-center justify-between hover:from-amber-900/40 hover:to-amber-800/40 transition-all duration-200 group"
           >
             <div className="flex items-center gap-4">

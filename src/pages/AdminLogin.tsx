@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Input, Button, MessagePlugin } from 'tdesign-react';
 import { UserIcon, LockOnIcon, DesktopIcon } from 'tdesign-icons-react';
-import { login } from '../services/auth';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -27,33 +26,39 @@ export default function AdminLogin() {
     setLoading(true);
 
     try {
-      // 调用登录API
-      const result = await login(formData.username.trim(), formData.password);
+      // 模拟管理员登录验证
+      // 在实际项目中，这里应该调用后端API
+      const mockAdminUsers = [
+        { username: 'admin', password: 'admin123', role: 'ADMIN', name: '超级管理员' },
+        { username: 'superadmin', password: 'super123', role: 'ADMIN', name: '超级管理员' }
+      ];
 
-      // 验证是否是管理员
-      if (result.user.role !== 'ADMIN') {
-        MessagePlugin.error('该账号不是管理员账号，无法访问后台管理系统');
-        // 清除token
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+      const adminUser = mockAdminUsers.find(
+        u => u.username === formData.username.trim() && u.password === formData.password
+      );
+
+      if (!adminUser) {
+        MessagePlugin.error('用户名或密码错误');
         setLoading(false);
         return;
       }
 
+      // 模拟生成管理员令牌
+      const adminToken = 'admin_token_' + Date.now() + '_' + Math.random().toString(36).substr(2);
+
+      // 保存独立的adminToken和adminUser
+      localStorage.setItem('adminToken', adminToken);
+      localStorage.setItem('adminUser', JSON.stringify({
+        username: adminUser.username,
+        name: adminUser.name,
+        role: adminUser.role
+      }));
+
       MessagePlugin.success('登录成功，欢迎回来');
-      // 跳转到后台主页
-      navigate('/admin');
+      // 跳转到后台管理主页
+      navigate('/dashboard');
     } catch (error: any) {
-      // 根据错误类型显示不同的提示
-      if (error.message.includes('用户名或密码错误')) {
-        MessagePlugin.error('用户名或密码错误，请重试');
-      } else if (error.message.includes('服务器内部错误')) {
-        MessagePlugin.error('服务器错误，请稍后重试');
-      } else if (error.message.includes('未授权')) {
-        MessagePlugin.error('登录失败，请检查账号状态');
-      } else {
-        MessagePlugin.error(error.message || '登录失败，请稍后重试');
-      }
+      MessagePlugin.error(error.message || '登录失败，请稍后重试');
     } finally {
       setLoading(false);
     }
@@ -66,7 +71,8 @@ export default function AdminLogin() {
   };
 
   const handleBackToHome = () => {
-    navigate('/');
+    // 返回前端首页
+    window.location.href = '/';
   };
 
   return (

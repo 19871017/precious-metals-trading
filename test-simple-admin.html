@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>简单测试</title>
+  </head>
+  <body style="background: #f0f0f0; padding: 20px;">
+    <h1>HTML 页面加载成功</h1>
+    <p>如果你能看到这段文字,说明 HTML 是正常的</p>
+    <div id="root"></div>
+    <script type="module">
+      // 直接在 HTML 中写 JavaScript 测试
+      console.log('JavaScript 运行正常');
+      document.getElementById('root').innerHTML = '<h2 style="color: blue;">JavaScript 正常工作!</h2>';
+    </script>
+  </body>
+</html>
