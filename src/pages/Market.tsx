@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Card, Badge, Input, Dialog, MessagePlugin, Drawer } from 'tdesign-react';
-import { SettingIcon, ArrowUpIcon, ArrowDownIcon, ChevronDownIcon, CalendarIcon, ChartIcon, WalletIcon, TrendingUpIcon, CloseIcon, InfoCircleIcon, ListIcon, NotificationIcon } from 'tdesign-icons-react';
+import { SettingIcon, ArrowUpIcon, ArrowDownIcon, ChevronDownIcon, CalendarIcon, ChartIcon, WalletIcon, TrendingUpIcon, CloseIcon, InfoCircleIcon, ListIcon, NotificationIcon, RobotIcon, PlayCircleIcon, StopCircleIcon } from 'tdesign-icons-react';
 import TechRefreshIcon from '../components/TechRefreshIcon';
 import ReactECharts from 'echarts-for-react';
 import { getQuoteBySymbol, getKlineBySymbol } from '../services/shuhai-backend.service';
@@ -15,6 +15,10 @@ import OrderManagement from '../components/OrderManagement';
 import OrderHistory from '../components/OrderHistory';
 import NotificationDrawer from '../components/NotificationDrawer';
 import { useOrderUpdates, usePositionUpdates } from '../hooks/useOrderUpdates';
+import { autoTradingEngine, TradingStatus, AutoTradingConfig } from '../services/auto-trading-engine.service';
+import { marketMonitor } from '../services/market-monitor.service';
+import { autoRiskService } from '../services/auto-risk.service';
+import { STRATEGY_PARAMS } from '../services/strategy.service';
 
 // 格式化函数
 const formatPercent = (value: number): string => {
@@ -104,11 +108,31 @@ export default function Market() {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [showOrderManagement, setShowOrderManagement] = useState(false);
   const [showNotificationDrawer, setShowNotificationDrawer] = useState(false);
+  const [showAiQuantDrawer, setShowAiQuantDrawer] = useState(false);
   const [aiStrategy, setAiStrategy] = useState<SymbolStrategy | null>(null);
   const [userId] = useState('demo-user');
+  const [tradingStatus, setTradingStatus] = useState<TradingStatus>(TradingStatus.IDLE);
+  const [autoConfig, setAutoConfig] = useState<Partial<AutoTradingConfig>>({
+    strategyId: 'maCross',
+    enabled: false,
+    autoStopLoss: true,
+    autoTakeProfit: true,
+  });
 
   const orderUpdateConnected = useOrderUpdates(userId, orders, setOrders);
   const positionUpdateConnected = usePositionUpdates(userId, positions, setPositions);
+
+  useEffect(() => {
+    const handleStatusChange = (data: any) => {
+      setTradingStatus(data.status);
+    };
+
+    autoTradingEngine.on('statusChanged', handleStatusChange);
+
+    return () => {
+      autoTradingEngine.off('statusChanged', handleStatusChange);
+    };
+  }, []);
 
   // 我的持仓数据 - 从 localStorage 加载
   const [positions, setPositions] = useState<PositionType[]>(() => {
@@ -1492,6 +1516,16 @@ export default function Market() {
                 <span className="text-sm">订单管理</span>
               </button>
               <button
+                onClick={() => setShowAiQuantDrawer(true)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-gradient-to-br from-purple-900/30 to-blue-900/30 hover:from-purple-900/50 hover:to-blue-900/50 border border-purple-700/40 hover:border-purple-600/50 text-purple-400/90 transition-colors relative"
+              >
+                <RobotIcon size="14px" />
+                <span className="text-sm">AI量化</span>
+                {tradingStatus === 'running' && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                )}
+              </button>
+              <button
                 onClick={() => navigate('/analysis')}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-neutral-300 transition-colors"
               >
@@ -2239,6 +2273,187 @@ export default function Market() {
         onClose={() => setShowNotificationDrawer(false)}
         userId={userId}
       />
+
+      <Drawer
+        header={
+          <div className="flex items-center gap-2">
+            <RobotIcon size="20px" className="text-purple-500" />
+            <span className="text-base font-semibold text-white">AI量化交易</span>
+          </div>
+        }
+        visible={showAiQuantDrawer}
+        onClose={() => setShowAiQuantDrawer(false)}
+        size="480px"
+        footer={null}
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-neutral-400">运行状态</p>
+              <p className={`text-lg font-semibold ${
+                tradingStatus === 'running' ? 'text-green-500' :
+                tradingStatus === 'paused' ? 'text-yellow-500' :
+                tradingStatus === 'error' ? 'text-red-500' :
+                'text-neutral-500'
+              }`}>
+                {tradingStatus === 'running' ? '运行中' :
+                  tradingStatus === 'paused' ? '已暂停' :
+                  tradingStatus === 'error' ? '错误' :
+                  tradingStatus === 'idle' ? '未启动' : '已停止'}
+              </p>
+            </div>
+            <Space>
+              {tradingStatus === 'running' ? (
+                <Button
+                  size="small"
+                  variant="outline"
+                  theme="warning"
+                  icon={<StopCircleIcon />}
+                  onClick={async () => {
+                    try {
+                      await autoTradingEngine.stop();
+                      await marketMonitor.stop();
+                    } catch (error) {
+                      MessagePlugin.error('停止失败');
+                    }
+                  }}
+                >
+                  停止
+                </Button>
+              ) : (
+                <Button
+                  size="small"
+                  theme="primary"
+                  icon={<PlayCircleIcon />}
+                  onClick={async () => {
+                    if (!autoConfig.strategyId) {
+                      MessagePlugin.warning('请先配置策略');
+                      return;
+                    }
+
+                    try {
+                      const strategyInfo = STRATEGY_PARAMS[autoConfig.strategyId];
+                      const tradingConfig: AutoTradingConfig = {
+                        strategyId: autoConfig.strategyId,
+                        strategyName: strategyInfo.name,
+                        symbols: ['GOLD', 'DAX', 'HSI', 'NQ', 'MHSI', 'USOIL'],
+                        initialCapital: 100000,
+                        maxPositionSize: 50000,
+                        maxDailyLoss: 50000,
+                        maxDrawdown: 20,
+                        autoStopLoss: autoConfig.autoStopLoss !== false,
+                        autoTakeProfit: autoConfig.autoTakeProfit !== false,
+                        stopLossPercent: autoConfig.stopLossPercent || 2,
+                        takeProfitPercent: autoConfig.takeProfitPercent || 5,
+                        leverage: 10,
+                        enabled: true,
+                      };
+
+                      await autoTradingEngine.start(tradingConfig);
+
+                      const signalConfig = {
+                        strategyId: autoConfig.strategyId,
+                        symbols: tradingConfig.symbols,
+                        enabled: true,
+                        parameters: strategyInfo.parameters,
+                      };
+
+                      await marketMonitor.start(signalConfig);
+
+                      MessagePlugin.success('AI量化交易已启动');
+                    } catch (error) {
+                      MessagePlugin.error('启动失败');
+                      logger.error('Failed to start AI trading:', error);
+                    }
+                  }}
+                >
+                  启动
+                </Button>
+              )}
+            </Space>
+          </div>
+
+          <div className="bg-neutral-900 rounded-lg p-4 border border-neutral-800">
+            <p className="text-sm text-neutral-400 mb-3">策略配置</p>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-300">选择策略</span>
+                <select
+                  className="bg-neutral-950 border border-neutral-700 rounded px-3 py-1.5 text-sm text-white"
+                  value={autoConfig.strategyId || ''}
+                  onChange={(e) => setAutoConfig(prev => ({ ...prev, strategyId: e.target.value }))}
+                >
+                  {Object.entries(STRATEGY_PARAMS).map(([key, value]) => (
+                    <option key={key} value={key}>{value.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-300">自动止损</span>
+                <input
+                  type="checkbox"
+                  checked={autoConfig.autoStopLoss !== false}
+                  onChange={(e) => setAutoConfig(prev => ({ ...prev, autoStopLoss: e.target.checked }))}
+                  className="w-4 h-4"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-300">自动止盈</span>
+                <input
+                  type="checkbox"
+                  checked={autoConfig.autoTakeProfit !== false}
+                  onChange={(e) => setAutoConfig(prev => ({ ...prev, autoTakeProfit: e.target.checked }))}
+                  className="w-4 h-4"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-neutral-900 rounded-lg p-4 border border-neutral-800">
+            <p className="text-sm text-neutral-400 mb-3">风控设置</p>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-300">日亏损上限</span>
+                <span className="text-sm text-white font-mono">¥50,000</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-300">最大回撤</span>
+                <span className="text-sm text-white font-mono">20%</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-neutral-300">最大持仓</span>
+                <span className="text-sm text-white font-mono">5个</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Button
+              variant="outline"
+              block
+              onClick={() => navigate('/strategy-monitor')}
+            >
+              查看监控页面
+            </Button>
+            <Button
+              variant="outline"
+              block
+              onClick={() => navigate('/strategy')}
+            >
+              策略回测
+            </Button>
+          </div>
+
+          <div className="bg-blue-950/20 border border-blue-900/40 rounded-lg p-3">
+            <div className="flex items-start gap-2">
+              <InfoCircleIcon size="16px" className="text-blue-500 mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-blue-400 leading-relaxed">
+                AI量化交易会根据所选策略自动执行买卖操作,请谨慎设置风险控制参数。建议先在回测模式下验证策略效果。
+              </div>
+            </div>
+          </div>
+        </div>
+      </Drawer>
     </div>
   );
 }

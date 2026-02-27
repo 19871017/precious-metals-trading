@@ -16,6 +16,7 @@ import Withdraw from './pages/Withdraw';
 import BankCardManagement from './pages/BankCardManagement';
 import HelpCenter from './pages/HelpCenter';
 import OrderHistory from './pages/OrderHistory';
+import StrategyMonitor from './pages/StrategyMonitor';
 import ProtectedRoute from './components/ProtectedRoute';
 import AgentDashboard from './pages/agent/Dashboard';
 import AgentCustomers from './pages/agent/Customers';
@@ -118,6 +119,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <OrderHistory />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/strategy-monitor"
+            element={
+              <ProtectedRoute>
+                <StrategyMonitor />
               </ProtectedRoute>
             }
           />
