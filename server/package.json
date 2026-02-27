@@ -15,7 +15,8 @@
     "pm2:restart": "pm2 restart ecosystem.config.js",
     "db:migrate": "node --import tsx/esm src/scripts/migrate.ts",
     "db:seed": "node --import tsx/esm src/scripts/seed.ts",
-    "db:init-shuhai": "node --import tsx/esm src/scripts/init-shuhai-cache.ts"
+    "db:init-shuhai": "node --import tsx/esm src/scripts/init-shuhai-cache.ts",
+    "docs": "jsdoc2md src -c jsdoc.json -t node_modules/tsd-jsdoc/dist -r"
   },
   "keywords": [
     "trading",

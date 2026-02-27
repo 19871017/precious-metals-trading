@@ -1,4 +1,5 @@
 import { Pool, PoolClient, QueryResult } from 'pg';
+import { QueryParams } from '../types';
 import logger from '../utils/logger';
 
 /**
@@ -58,7 +59,7 @@ export async function testConnection(): Promise<boolean> {
  */
 export async function query<T = any>(
   text: string,
-  params?: any[]
+  params?: QueryParams
 ): Promise<QueryResult<T>> {
   const start = Date.now();
   try {
@@ -98,7 +99,7 @@ export async function transaction<T>(
  */
 export async function findOne<T = any>(
   text: string,
-  params?: any[]
+  params?: QueryParams
 ): Promise<T | null> {
   const result = await query<T>(text, params);
   return result.rows[0] || null;
@@ -109,7 +110,7 @@ export async function findOne<T = any>(
  */
 export async function findMany<T = any>(
   text: string,
-  params?: any[]
+  params?: QueryParams
 ): Promise<T[]> {
   const result = await query<T>(text, params);
   return result.rows;
@@ -120,7 +121,7 @@ export async function findMany<T = any>(
  */
 export async function insertAndGetId(
   text: string,
-  params?: any[]
+  params?: QueryParams
 ): Promise<number> {
   const result = await query(text + ' RETURNING id', params);
   return result.rows[0].id;
@@ -131,7 +132,7 @@ export async function insertAndGetId(
  */
 export async function update(
   text: string,
-  params?: any[]
+  params?: QueryParams
 ): Promise<QueryResult> {
   return await query(text, params);
 }
@@ -141,7 +142,7 @@ export async function update(
  */
 export async function remove(
   text: string,
-  params?: any[]
+  params?: QueryParams
 ): Promise<QueryResult> {
   return await query(text, params);
 }
@@ -151,7 +152,7 @@ export async function remove(
  */
 export async function paginate<T = any>(
   text: string,
-  params: any[],
+  params?: QueryParams,
   page: number = 1,
   pageSize: number = 20
 ): Promise<{

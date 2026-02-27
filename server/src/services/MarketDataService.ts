@@ -1,4 +1,4 @@
-import { MarketData } from '../types';
+import { MarketData, SocketIO } from '../types';
 import { pool, query } from '../config/database';
 import axios from 'axios';
 import http from 'http';
@@ -65,12 +65,12 @@ export class MarketDataService {
   private shuhaiAvailable: boolean = false;
   private lastShuhaiError: string = '';
   private databaseConnected: boolean = false;
-  private io: any = null; // Socket.IO 实例
+  private io: SocketIO | null = null; // Socket.IO 实例
 
   /**
    * 设置 Socket.IO 实例（用于实时推送）
    */
-  setSocketIO(io: any): void {
+  setSocketIO(io: SocketIO): void {
     this.io = io;
     logger.info('Socket.IO instance configured');
   }

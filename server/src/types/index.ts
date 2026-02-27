@@ -186,3 +186,146 @@ export interface RiskPreview {
   maxLoss: number;
   riskLevel: RiskLevel;
 }
+
+// ============================================
+// Express Request/Response 类型扩展
+// ============================================
+
+export interface AuthenticatedRequest extends Express.Request {
+  user: {
+    id: string;
+    username: string;
+    role: string;
+  };
+}
+
+export interface ApiResponse<T> {
+  code: number;
+  message: string;
+  data: T;
+  timestamp: number;
+}
+
+// ============================================
+// 数据库查询参数类型
+// ============================================
+
+export type QueryParams = (string | number | boolean | null)[];
+
+// ============================================
+// Socket.IO 类型定义
+// ============================================
+
+export type SocketIO = {
+  to: (room: string) => {
+    emit: (event: string, data: any) => void;
+  };
+  on: (event: string, callback: (...args: any[]) => void) => void;
+};
+
+// ============================================
+// 外部 API 数据类型
+// ============================================
+
+export interface ShuhaiQuote {
+  Symbol: string;
+  Name?: string;
+  NewPrice: number;
+  LastClose: number;
+  Open: number;
+  High: number;
+  Low: number;
+  Volume: number;
+  PriceChangeRatio?: number;
+  BP1?: number;
+  SP1?: number;
+}
+
+export interface YahooQuote {
+  symbol: string;
+  regularMarketPrice: number;
+  previousClose: number;
+  change: number;
+  changePercent: number;
+}
+
+export interface YahooKline {
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+// ============================================
+// 金十数据类型
+// ============================================
+
+export interface JinshiNewsItem {
+  title: string;
+  url: string;
+  publishTime: string;
+  summary?: string;
+}
+
+// ============================================
+// 配置项类型
+// ============================================
+
+export interface SystemConfig {
+  key: string;
+  value: string;
+  category: string;
+  description?: string;
+  is_public: boolean;
+}
+
+export interface CommissionConfig {
+  id: number;
+  commission_type: 'PERCENTAGE' | 'FIXED' | 'TIERED';
+  commission_value: number;
+  min_commission?: number;
+  max_commission?: number;
+  tier_ranges?: any[];
+  created_at: Date;
+  updated_at: Date;
+}
+
+// ============================================
+// 财务记录类型
+// ============================================
+
+export interface FinanceRecord {
+  id: number;
+  user_id: string;
+  type: 'DEPOSIT' | 'WITHDRAW' | 'FEE' | 'PROFIT' | 'LOSS' | 'REFUND';
+  amount: number;
+  balance_after: number;
+  description: string;
+  related_order_id?: string;
+  created_at: Date;
+}
+
+export interface DepositRequest {
+  id: number;
+  user_id: string;
+  amount: number;
+  method: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED';
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface WithdrawRequest {
+  id: number;
+  user_id: string;
+  amount: number;
+  bank_name: string;
+  bank_account: string;
+  account_holder: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED';
+  reject_reason?: string;
+  created_at: Date;
+  updated_at: Date;
+}

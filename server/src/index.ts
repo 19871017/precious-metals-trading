@@ -243,8 +243,8 @@ app.use('/api', apiLimiter, createApiRouter(orderManager, positionManager, riskM
 app.use('/shuhai', createShuhaiRouter());
 
 // 错误处理中间件
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  logger.error('全局错误处理:', {
+app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  logger.error('Global error handler:', {
     error: err.message,
     stack: err.stack,
     url: req.url,
