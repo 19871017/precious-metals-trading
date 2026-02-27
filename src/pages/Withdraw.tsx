@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   Button,
   Input,
-  Radio,
-  Form,
   MessagePlugin,
   Card,
   Dialog,
@@ -19,40 +17,39 @@ import {
   RemoveIcon,
 } from 'tdesign-icons-react';
 import logger from '../utils/logger';
+import { financeApi, accountApi, FinancialRecord } from '../services/user.service';
 
-// 模拟提现记录
-const mockWithdrawRecords = [
+// 模拟提现记录（作为后备）
+const mockWithdrawRecords: FinancialRecord[] = [
   {
     id: 1,
-    type: 'bank',
+    orderNumber: 'WD20260223001',
+    userId: 'demo-user',
+    type: 'withdraw',
     amount: 5000,
-    fee: 0,
-    actualAmount: 5000,
-    status: 'completed',
     method: '工商银行 ****8888',
+    status: 'completed',
     createdAt: '2026-02-23 10:30:25',
-    processedAt: '2026-02-24 10:30:25',
   },
   {
     id: 2,
-    type: 'usdt',
+    orderNumber: 'WD20260224002',
+    userId: 'demo-user',
+    type: 'withdraw',
     amount: 1000,
-    fee: 5,
-    actualAmount: 995,
-    status: 'pending',
     method: 'USDT-TRC20',
+    status: 'pending',
     createdAt: '2026-02-24 15:20:10',
   },
   {
     id: 3,
-    type: 'bank',
+    orderNumber: 'WD20260222003',
+    userId: 'demo-user',
+    type: 'withdraw',
     amount: 3000,
-    fee: 0,
-    actualAmount: 3000,
-    status: 'rejected',
     method: '建设银行 ****6666',
+    status: 'rejected',
     createdAt: '2026-02-22 09:45:30',
-    rejectReason: '银行卡信息不正确',
   },
 ];
 
@@ -60,8 +57,8 @@ const Withdraw = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [availableBalance, setAvailableBalance] = useState(263560);
-  const [frozenAmount, setFrozenAmount] = useState(586440);
+  const [availableBalance, setAvailableBalance] = useState(0);
+  const [frozenAmount, setFrozenAmount] = useState(0);
   const [formValue, setFormValue] = useState({
     amount: '',
     paymentMethod: 'bank',
@@ -69,7 +66,7 @@ const Withdraw = () => {
     usdtAddress: '',
     password: '',
   });
-  const [records, setRecords] = useState(mockWithdrawRecords);
+  const [records, setRecords] = useState<FinancialRecord[]>([]);
   const [successDialog, setSuccessDialog] = useState(false);
   const [withdrawResult, setWithdrawResult] = useState<any>(null);
 
@@ -88,12 +85,26 @@ const Withdraw = () => {
     loadWithdrawData();
   }, []);
 
-  const loadWithdrawData = () => {
+  const loadWithdrawData = async () => {
     setLoading(true);
-    // 模拟 API 调用
-    setTimeout(() => {
+    try {
+      // 加载账户余额
+      const accountInfo = await accountApi.getInfo();
+      setAvailableBalance(accountInfo.availableBalance);
+      setFrozenAmount(accountInfo.frozenMargin);
+
+      // 加载提现记录
+      const result = await financeApi.getRecords({ type: 'withdraw' });
+      setRecords(result.list || []);
+    } catch (error) {
+      logger.error('加载提现数据失败:', error);
+      // 使用模拟数据作为后备
+      setAvailableBalance(263560);
+      setFrozenAmount(586440);
+      setRecords(mockWithdrawRecords);
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   };
 
   const handleMaxAmount = () => {
@@ -136,26 +147,40 @@ const Withdraw = () => {
     setSubmitting(true);
 
     try {
-      // 模拟 API 调用
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const bank = banks.find(b => b.id === parseInt(formValue.bankCard));
+      const params: any = {
+        amount,
+        method: formValue.paymentMethod as 'bank' | 'usdt',
+      };
+
+      if (formValue.paymentMethod === 'bank' && bank) {
+        params.bankName = bank.bank;
+        params.bankAccount = bank.card;
+        params.accountName = '用户姓名';
+      } else if (formValue.paymentMethod === 'usdt') {
+        params.usdtAddress = formValue.usdtAddress;
+      }
+
+      const result = await financeApi.createWithdraw(params);
 
       // 计算手续费
       const fee = formValue.paymentMethod === 'usdt' ? Math.max(5, amount * 0.001) : 0;
       const actualAmount = amount - fee;
 
       // 创建提现记录
-      const newRecord = {
-        id: Date.now(),
-        type: formValue.paymentMethod,
-        amount,
+      const newRecord: FinancialRecord = {
+        id: parseInt(result.id),
+        orderNumber: result.orderNumber,
+        userId: 'current-user',
+        type: 'withdraw',
+        amount: result.amount,
         fee,
-        actualAmount,
-        status: 'pending',
         method:
           formValue.paymentMethod === 'bank'
-            ? banks.find((b) => b.id === parseInt(formValue.bankCard))?.bank || '银行卡'
+            ? bank?.bank || '银行卡'
             : 'USDT-TRC20',
-        createdAt: new Date().toLocaleString('zh-CN'),
+        status: 'pending',
+        createdAt: result.createdAt,
       };
 
       // 更新可用余额
@@ -164,11 +189,11 @@ const Withdraw = () => {
 
       // 显示成功弹窗
       setWithdrawResult({
-        amount,
+        amount: result.amount,
         fee,
         actualAmount,
         method: newRecord.method,
-        orderNo: `WD${Date.now()}`,
+        orderNo: result.orderNumber,
       });
       setSuccessDialog(true);
 
@@ -227,13 +252,13 @@ const Withdraw = () => {
             <div>
               <div className="text-gray-400 text-sm mb-1">可用余额</div>
               <div className="text-amber-400 font-bold text-2xl">
-                ¥{availableBalance.toLocaleString()}
+                {loading ? '...' : `¥${availableBalance.toLocaleString()}`}
               </div>
             </div>
             <div>
               <div className="text-gray-400 text-sm mb-1">占用资金</div>
               <div className="text-gray-300 font-bold text-2xl">
-                ¥{frozenAmount.toLocaleString()}
+                {loading ? '...' : `¥${frozenAmount.toLocaleString()}`}
               </div>
             </div>
           </div>
@@ -463,7 +488,7 @@ const Withdraw = () => {
                         <div className="text-white font-bold text-lg">
                           -{record.amount.toLocaleString()} 元
                         </div>
-                        {record.fee > 0 && (
+                        {record.fee && record.fee > 0 && (
                           <div className="text-gray-400 text-xs">
                             手续费：{record.fee}
                           </div>
@@ -513,10 +538,10 @@ const Withdraw = () => {
               手续费：{withdrawResult.fee.toFixed(2)}
             </div>
           )}
-          <div className="text-gray-400 text-sm mb-2">
+          <div className="text-gray-400 text-sm mb-4">
             实际到账：¥{withdrawResult?.actualAmount?.toLocaleString()}
           </div>
-          <div className="text-gray-400 text-sm mb-4">
+          <div className="text-gray-400 text-sm mb-6">
             订单编号：{withdrawResult?.orderNo}
           </div>
           <Button

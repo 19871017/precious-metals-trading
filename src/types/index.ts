@@ -23,6 +23,8 @@ export interface Position {
   leverage?: number;
   stopLoss?: number;
   takeProfit?: number;
+  liquidationPrice?: number;
+  openedAt?: string;
 }
 
 export interface Account {
@@ -31,6 +33,7 @@ export interface Account {
   frozenMargin: number;
   dailyPL: number;
   cumulativePL: number;
+  riskLevel?: 'SAFE' | 'WARNING' | 'DANGER';
 }
 
 export interface Order {

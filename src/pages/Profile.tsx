@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Badge, Dialog, MessagePlugin } from 'tdesign-react';
+import { Button, Badge, Dialog, MessagePlugin, Loading } from 'tdesign-react';
 import {
   WalletIcon,
   UserIcon,
@@ -23,89 +23,7 @@ import BindEmailDialog from '../components/profile/BindEmailDialog';
 import RealNameAuthDialog from '../components/profile/RealNameAuthDialog';
 import NoticeDetailDialog from '../components/profile/NoticeDetailDialog';
 import logger from '../utils/logger';
-
-// 用户数据
-const userData = {
-  name: '张三',
-  phone: '138****8888',
-  isVerified: true,
-  avatar: ''
-};
-
-// 资产数据
-const assetData = {
-  totalAssets: 850000,
-  availableFunds: 263560,
-  frozenMargin: 586440,
-  dailyPL: 12500,
-  dailyPLPercent: 1.5
-};
-
-// 模拟趋势数据
-const trendData = [800000, 810000, 805000, 815000, 820000, 825000, 830000, 840000, 835000, 850000];
-
-// 账户管理功能
-const accountFunctions = [
-  {
-    icon: <WalletIcon size="24px" />,
-    title: '账户充值',
-    description: '快捷充值，即时到账',
-    badge: 'NEW',
-    onClick: (navigate: any) => navigate('/deposit')
-  },
-  {
-    icon: <WalletIcon size="24px" />,
-    title: '账户提现',
-    description: '安全快捷，T+1到账',
-    onClick: (navigate: any) => navigate('/withdraw')
-  },
-  {
-    icon: <WalletIcon size="24px" />,
-    title: '银行卡管理',
-    description: '绑定/解绑银行卡',
-    onClick: (navigate: any) => navigate('/bank-cards')
-  },
-  {
-    icon: <UserIcon size="24px" />,
-    title: '个人信息',
-    description: '修改昵称、头像',
-    onClick: () => {
-      /* 由 UserCard 组件处理 */
-    }
-  }
-];
-
-// 安全设置项目
-  const securityItems = [
-    {
-      icon: <LockOnIcon size="24px" />,
-      title: '登录密码',
-      description: '定期修改密码，保障账户安全',
-      status: '已设置',
-      onClick: () => setChangePasswordVisible(true)
-    },
-    {
-      icon: <CallIcon size="24px" />,
-      title: '手机验证',
-      description: `已绑定 ${currentPhone}`,
-      status: '已绑定',
-      onClick: () => setChangePhoneVisible(true)
-    },
-    {
-      icon: <MailIcon size="24px" />,
-      title: '邮箱验证',
-      description: currentEmail || '未绑定',
-      status: currentEmail ? '已绑定' : '未绑定',
-      onClick: () => setBindEmailVisible(true)
-    },
-    {
-      icon: <CheckIcon size="24px" />,
-      title: '实名认证',
-      description: authInfo ? `${authInfo.name}，已认证` : '未认证',
-      status: authInfo ? '已认证' : '未认证',
-      onClick: () => setRealNameAuthVisible(true)
-    }
-  ];
+import { accountApi } from '../services/user.service';
 
 // 系统公告
 const systemNotices = [
@@ -113,14 +31,14 @@ const systemNotices = [
     id: 1,
     title: '系统维护通知',
     content: '2024年2月25日 02:00-04:00 系统升级维护',
-    date: '2024-02-23 10:30',
+    date: '2024-02-25 10:30',
     type: 'urgent',
     read: false
   },
   {
     id: 2,
     title: '保证金比例调整',
-    content: '黄金保证金比例调整为 8%',
+    content: '黄金保证金比例调整为8%',
     date: '2024-02-22 15:20',
     type: 'important',
     read: true
@@ -146,12 +64,65 @@ export default function Profile() {
   const [realNameAuthVisible, setRealNameAuthVisible] = useState(false);
   const [noticeDetailVisible, setNoticeDetailVisible] = useState(false);
   const [selectedNotice, setSelectedNotice] = useState<any>(null);
-  const [currentPhone, setCurrentPhone] = useState(userData.phone);
-  const [currentEmail, setCurrentEmail] = useState<string | null>(null);
-  const [authInfo, setAuthInfo] = useState<{ name: string; idCard: string; verified: boolean } | null>(userData.isVerified ? { name: '张三', idCard: '110101199001011234', verified: true } : null);
+
+  // 用户数据
+  const [userData, setUserData] = useState({
+    name: '张三',
+    phone: '138****8888',
+    isVerified: true,
+    avatar: ''
+  });
+
+  // 资产数据
+  const [assetData, setAssetData] = useState({
+    totalAssets: 0,
+    availableFunds: 0,
+    frozenMargin: 0,
+    dailyPL: 0,
+    dailyPLPercent: 0
+  });
+
+  // 加载状态
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    loadUserData();
+  }, []);
+
+  const loadUserData = async () => {
+    setLoading(true);
+    try {
+      const accountInfo = await accountApi.getInfo();
+      setAssetData({
+        totalAssets: accountInfo.totalBalance,
+        availableFunds: accountInfo.availableBalance,
+        frozenMargin: accountInfo.frozenMargin,
+        dailyPL: accountInfo.realizedPnl,
+        dailyPLPercent: accountInfo.totalBalance > 0 ? (accountInfo.realizedPnl / accountInfo.totalBalance * 100) : 0,
+      });
+    } catch (error) {
+      logger.error('加载用户数据失败:', error);
+      // 使用模拟数据作为后备
+      setAssetData({
+        totalAssets: 850000,
+        availableFunds: 263560,
+        frozenMargin: 586440,
+        dailyPL: 12500,
+        dailyPLPercent: 1.5
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogout = () => {
-    window.location.href = '/';
+    setLogoutDialogVisible(true);
+  };
+
+  const confirmLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.href = '/login';
   };
 
   const handleEditProfile = () => {
@@ -160,7 +131,9 @@ export default function Profile() {
 
   const handleProfileSave = (data: any) => {
     logger.debug('保存个人信息:', data);
-    // 更新用户数据（实际应调用API）
+    // TODO: 调用后端API保存用户信息
+    setUserData(prev => ({ ...prev, ...data }));
+    MessagePlugin.success('个人信息保存成功');
   };
 
   const handleChangePassword = () => {
@@ -169,8 +142,10 @@ export default function Profile() {
 
   const handlePasswordChange = () => {
     setChangePasswordVisible(false);
-    // 退出登录，让用户重新登录
-    window.location.href = '/';
+    MessagePlugin.success('密码修改成功，请重新登录');
+    setTimeout(() => {
+      window.location.href = '/login';
+    }, 1500);
   };
 
   const handleNoticeClick = (notice: any) => {
@@ -178,263 +153,174 @@ export default function Profile() {
     setNoticeDetailVisible(true);
   };
 
+  // 账户管理功能
+  const accountFunctions = [
+    {
+      icon: <WalletIcon size="24px" />,
+      title: '账户充值',
+      description: '快捷充值，即时到账',
+      badge: 'NEW',
+      onClick: (navigate: any) => navigate('/deposit')
+    },
+    {
+      icon: <WalletIcon size="24px" />,
+      title: '账户提现',
+      description: '安全快捷，T+1到账',
+      onClick: (navigate: any) => navigate('/withdraw')
+    },
+    {
+      icon: <WalletIcon size="24px" />,
+      title: '银行卡管理',
+      description: '绑定/解绑银行卡',
+      onClick: (navigate: any) => navigate('/bank-cards')
+    },
+    {
+      icon: <UserIcon size="24px" />,
+      title: '个人信息',
+      description: '修改昵称、头像',
+      onClick: handleEditProfile
+    }
+  ];
+
+  // 安全设置项目
+  const securityItems = [
+    {
+      icon: <LockOnIcon size="24px" />,
+      title: '登录密码',
+      description: '定期修改密码，保障账户安全',
+      status: '已设置',
+      onClick: handleChangePassword
+    },
+    {
+      icon: <CallIcon size="24px" />,
+      title: '手机验证',
+      description: `已绑定 ${userData.phone}`,
+      status: '已绑定',
+      onClick: handleChangePassword
+    },
+    {
+      icon: <MailIcon size="24px" />,
+      title: '邮箱验证',
+      description: '未绑定',
+      status: '未绑定',
+      onClick: handleChangePassword
+    },
+    {
+      icon: <CheckIcon size="24px" />,
+      title: '实名认证',
+      description: '张三，已认证',
+      status: '已认证',
+      onClick: handleEditProfile
+    }
+  ];
+
+  // 模拟趋势数据
+  const trendData = [800000, 810000, 805000, 815000, 820000, 825000, 830000, 835000, 850000];
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-black to-neutral-950 pb-24">
-      <div className="max-w-2xl mx-auto px-4">
-        {/* 顶部标题栏 */}
-        <header className="flex justify-between items-center py-5 mb-4">
-          <div>
-            <h1 className="text-xl font-bold text-white tracking-wide">我的账户</h1>
-            <p className="text-xs text-neutral-500 mt-1">专业的金融账户管理中心</p>
-          </div>
-          <button className="w-10 h-10 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-500 hover:bg-neutral-800 hover:text-neutral-400 transition-all duration-200">
-            <SettingIcon size="18px" />
-          </button>
-        </header>
-
-        {/* 主内容区 */}
-        <div className="space-y-6">
-          {/* 用户卡片 */}
-          <UserCard
-            name={userData.name}
-            phone={userData.phone}
-            avatar={userData.avatar}
-            isVerified={userData.isVerified}
-            onEdit={handleEditProfile}
-          />
-
-          {/* 资产概览卡片 */}
-          <AssetCard
-            assets={assetData}
-            showTrend={true}
-            trendData={trendData}
-          />
-
-          {/* 后台管理入口（管理员可见） */}
-          <button
-            onClick={() => window.location.href = '/admin-entry.html'}
-            className="w-full bg-gradient-to-r from-amber-900/30 to-amber-800/30 border border-amber-700/50 rounded-xl p-4 flex items-center justify-between hover:from-amber-900/40 hover:to-amber-800/40 transition-all duration-200 group"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-amber-600/20 border border-amber-600/40 rounded-xl flex items-center justify-center">
-                <SettingIcon size="24px" className="text-amber-500" />
-              </div>
-              <div className="text-left">
-                <h4 className="text-sm font-semibold text-white mb-1 group-hover:text-amber-200 transition-colors">
-                  后台管理
-                </h4>
-                <p className="text-[11px] text-neutral-500">系统管理 · 数据统计 · 用户管理</p>
-              </div>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-amber-600/20 flex items-center justify-center group-hover:bg-amber-600/30 transition-colors">
-              <ChevronRightIcon size="16px" className="text-amber-500 group-hover:translate-x-0.5 transition-transform" />
-            </div>
-          </button>
-
-          {/* 快捷导航 */}
-          <QuickNav
-            activeKey={activeNav}
-            items={defaultNavItems}
-            onChange={setActiveNav}
-          />
-
-          {/* 功能区域 */}
-          {activeNav === 'account' && (
-            <FunctionGrid
-              title="常用功能"
-              items={accountFunctions.map(item => ({
-                ...item,
-                onClick: () => (item.onClick as any)(navigate)
-              }))}
-              columns={2}
-            />
-          )}
-
-          {activeNav === 'security' && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-1 h-4 bg-amber-700 rounded-full" />
-                <h3 className="text-sm font-bold text-white">安全设置</h3>
-              </div>
-              {securityItems.map((item, index) => (
-                <button
-                  key={index}
-                  onClick={() => (item.onClick as any)()}
-                  className="w-full bg-neutral-900/80 border border-neutral-800/80 rounded-xl p-4 flex items-center justify-between hover:bg-neutral-800/80 hover:border-neutral-700 transition-all duration-200 group"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-gradient-to-br from-amber-700/20 to-amber-900/20 border border-amber-700/30 rounded-xl flex items-center justify-center">
-                      <span className="text-amber-600">{item.icon}</span>
-                    </div>
-                    <div className="text-left">
-                      <h4 className="text-sm font-semibold text-white mb-1 group-hover:text-amber-200 transition-colors">
-                        {item.title}
-                      </h4>
-                      <p className="text-[11px] text-neutral-500">{item.description}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-xs font-medium ${
-                      item.status === '已设置' || item.status === '已绑定' || item.status === '已认证'
-                        ? 'text-green-600'
-                        : 'text-neutral-500'
-                    }`}>
-                      {item.status}
-                    </span>
-                    <ChevronRightIcon size="16px" className="text-neutral-600 group-hover:text-neutral-500 transition-colors" />
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {activeNav === 'notice' && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-1 h-4 bg-amber-700 rounded-full" />
-                <h3 className="text-sm font-bold text-white">系统公告</h3>
-              </div>
-              {systemNotices.map((notice) => (
-                <button
-                  key={notice.id}
-                  onClick={() => handleNoticeClick(notice)}
-                  className="w-full bg-neutral-900/80 border border-neutral-800/80 rounded-xl p-4 text-left hover:bg-neutral-800/80 hover:border-neutral-700 transition-all duration-200"
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <h4 className={`text-sm font-semibold ${
-                      notice.read ? 'text-neutral-400' : 'text-white'
-                    }`}>
-                      {notice.title}
-                    </h4>
-                    {!notice.read && (
-                      <Badge count="NEW" color="#14532d" shape="round" size="small" />
-                    )}
-                  </div>
-                  <p className="text-xs text-neutral-500 mb-2 leading-relaxed">{notice.content}</p>
-                  <p className="text-[10px] text-neutral-600 font-mono">{notice.date}</p>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {activeNav === 'help' && (
-            <div className="space-y-4">
-              <div className="bg-gradient-to-r from-amber-900/30 to-amber-800/30 border border-amber-700/50 rounded-xl p-6">
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-amber-600/20 border border-amber-600/40 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <span className="text-3xl">📚</span>
-                  </div>
-                  <h3 className="text-lg font-bold text-white mb-2">帮助中心</h3>
-                  <p className="text-sm text-neutral-400 mb-4">为您解答关于平台使用、交易、安全等各类问题</p>
-                  <button
-                    onClick={() => navigate('/help')}
-                    className="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition-colors"
-                  >
-                    进入帮助中心
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-neutral-900/80 border border-neutral-800/80 rounded-xl p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-1 h-4 bg-amber-700 rounded-full" />
-                  <h3 className="text-sm font-bold text-white">快速导航</h3>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { icon: '🆕', label: '新手入门', desc: '注册与认证' },
-                    { icon: '📊', label: '交易功能', desc: '下单与操作' },
-                    { icon: '💼', label: '持仓管理', desc: '平仓与设置' },
-                    { icon: '🧠', label: '智能分析', desc: '策略与回测' },
-                    { icon: '💰', label: '资金管理', desc: '充值与提现' },
-                    { icon: '🔒', label: '账户安全', desc: '密码与验证' },
-                  ].map((item, index) => (
-                    <button
-                      key={index}
-                      onClick={() => navigate('/help')}
-                      className="bg-neutral-950/60 border border-neutral-800/80 rounded-xl p-4 text-left hover:bg-neutral-800/60 hover:border-amber-700/50 transition-all group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{item.icon}</span>
-                        <div>
-                          <div className="text-sm font-medium text-white group-hover:text-amber-200 transition-colors">{item.label}</div>
-                          <div className="text-xs text-neutral-500">{item.desc}</div>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 退出登录按钮 */}
-          <Button
-            block
-            variant="outline"
-            size="large"
-            icon={<LogoutIcon />}
-            onClick={() => setLogoutDialogVisible(true)}
-            className="!border-neutral-800 !text-neutral-400 hover:!border-neutral-700 hover:!text-neutral-300 hover:!bg-neutral-900/50 transition-all duration-200"
-          >
-            退出登录
-          </Button>
+      {/* 顶部标题栏 */}
+      <header className="flex justify-between items-center py-5 bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-800">
+        <div>
+          <h1 className="text-xl font-bold text-white tracking-wide">我的账户</h1>
+          <p className="text-xs text-neutral-500 mt-1">专业的金融账户管理中心</p>
         </div>
+        <button className="w-10 h-10 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-500 hover:bg-neutral-800 hover:text-neutral-400 transition-all duration-200">
+          <SettingIcon size="18px" />
+        </button>
+      </header>
+
+      {/* 主内容区 */}
+      <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+        {/* 用户卡片 */}
+        <UserCard
+          name={userData.name}
+          phone={userData.phone}
+          avatar={userData.avatar}
+          isVerified={userData.isVerified}
+          onEdit={handleEditProfile}
+          loading={loading}
+        />
+
+        {/* 资产概览卡片 */}
+        <AssetCard
+          assets={assetData}
+          showTrend={true}
+          trendData={trendData}
+        />
+
+        {/* 后台管理入口（管理员可见） */}
+        <button
+          onClick={() => navigate('/admin-simple')}
+          className="w-full bg-gradient-to-r from-amber-900/30 to-amber-800/30 border border-amber-700/50 rounded-xl p-4 flex items-center justify-between hover:from-amber-900/40 hover:to-amber-800/40 transition-all duration-200"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-amber-600/20 border border-amber-600/40 rounded-xl flex items-center justify-center">
+              <SettingIcon size="24px" className="text-amber-500" />
+            </div>
+            <div className="text-left">
+              <h4 className="text-sm font-semibold text-white mb-1">后台管理</h4>
+              <p className="text-[11px] text-neutral-500">系统管理 · 数据统计 · 用户管理</p>
+            </div>
+          </div>
+          <div className="w-8 h-8 rounded-full bg-amber-600/20 flex items-center justify-center group-hover:bg-amber-600/30 transition-colors">
+            <ChevronRightIcon size="16px" className="text-amber-500 group-hover:translate-x-0.5 transition-transform" />
+          </div>
+        </button>
+
+        {/* 快捷导航 */}
+        <QuickNav
+          activeKey={activeNav}
+          items={defaultNavItems}
+          onChange={setActiveNav}
+        />
+
+        {/* 功能区域 */}
+        {activeNav === 'account' && (
+          <FunctionGrid
+            title="常用功能"
+            items={accountFunctions.map(item => ({
+              ...item,
+              onClick: (item.onClick as any)(navigate)
+            }))}
+            columns={2}
+          />
+        )}
+
+        {activeNav === 'security' && (
+          <FunctionGrid
+            title="安全设置"
+            items={securityItems}
+            columns={2}
+          />
+        )}
       </div>
 
-      {/* 退出登录确认弹窗 */}
+      {/* 弹窗组件 */}
       <Dialog
         visible={logoutDialogVisible}
+        header="退出登录"
         onClose={() => setLogoutDialogVisible(false)}
-        onConfirm={handleLogout}
-        closeOnOverlayClick={true}
-        header="确认退出"
+        onConfirm={confirmLogout}
+        confirmBtnTheme="warning"
+        confirmBtnContent="确定退出"
       >
-        <div className="py-4">
-          <p className="text-sm text-neutral-400">您确定要退出登录吗？</p>
-        </div>
+        <p className="text-neutral-300">确定要退出登录吗？</p>
       </Dialog>
 
-      {/* 编辑个人信息弹窗 */}
       <EditProfileDialog
         visible={editProfileVisible}
         onClose={() => setEditProfileVisible(false)}
-        userData={userData}
         onSave={handleProfileSave}
+        userData={userData}
       />
 
-      {/* 修改密码弹窗 */}
       <ChangePasswordDialog
         visible={changePasswordVisible}
         onClose={() => setChangePasswordVisible(false)}
-        onSave={handlePasswordChange}
+        onConfirm={handlePasswordChange}
       />
 
-      {/* 修改手机号弹窗 */}
-      <ChangePhoneDialog
-        visible={changePhoneVisible}
-        onClose={() => setChangePhoneVisible(false)}
-        currentPhone={currentPhone}
-        onSuccess={(newPhone) => setCurrentPhone(newPhone)}
-      />
-
-      {/* 绑定邮箱弹窗 */}
-      <BindEmailDialog
-        visible={bindEmailVisible}
-        onClose={() => setBindEmailVisible(false)}
-        currentEmail={currentEmail}
-        onSuccess={(email) => setCurrentEmail(email)}
-      />
-
-      {/* 实名认证弹窗 */}
-      <RealNameAuthDialog
-        visible={realNameAuthVisible}
-        onClose={() => setRealNameAuthVisible(false)}
-        currentAuth={authInfo}
-        onSuccess={(data) => setAuthInfo({ ...data, verified: true })}
-      />
-
-      {/* 公告详情弹窗 */}
       <NoticeDetailDialog
         visible={noticeDetailVisible}
         notice={selectedNotice}

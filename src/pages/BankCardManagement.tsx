@@ -4,7 +4,6 @@ import {
   Button,
   Card,
   Dialog,
-  Form,
   Input,
   MessagePlugin,
   Loading,
@@ -15,28 +14,10 @@ import {
   DeleteIcon,
   InfoCircleIcon,
   CheckCircleIcon,
+  WalletIcon,
 } from 'tdesign-icons-react';
 import logger from '../utils/logger';
-
-// 模拟银行卡数据
-const mockBankCards = [
-  {
-    id: 1,
-    bankName: '工商银行',
-    cardNumber: '6222020200018888888',
-    holderName: '张三',
-    isDefault: true,
-    createdAt: '2025-01-15',
-  },
-  {
-    id: 2,
-    bankName: '建设银行',
-    cardNumber: '6217000010006666666',
-    holderName: '张三',
-    isDefault: false,
-    createdAt: '2025-03-20',
-  },
-];
+import { bankCardApi, BankCard } from '../services/user.service';
 
 const banks = [
   { id: 'icbc', name: '工商银行', icon: '🏦', color: '#C8102E' },
@@ -52,10 +33,10 @@ const banks = [
 const BankCardManagement = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [bankCards, setBankCards] = useState(mockBankCards);
+  const [bankCards, setBankCards] = useState<BankCard[]>([]);
   const [addDialogVisible, setAddDialogVisible] = useState(false);
   const [deleteDialogVisible, setDeleteDialogVisible] = useState(false);
-  const [selectedCard, setSelectedCard] = useState<any>(null);
+  const [selectedCard, setSelectedCard] = useState<BankCard | null>(null);
   const [formValue, setFormValue] = useState({
     bankName: '',
     cardNumber: '',
@@ -66,12 +47,18 @@ const BankCardManagement = () => {
     loadBankCards();
   }, []);
 
-  const loadBankCards = () => {
+  const loadBankCards = async () => {
     setLoading(true);
-    // 模拟 API 调用
-    setTimeout(() => {
+    try {
+      const data = await bankCardApi.getList();
+      setBankCards(data || []);
+    } catch (error) {
+      logger.error('加载银行卡失败:', error);
+      MessagePlugin.error('加载银行卡失败');
+      setBankCards([]);
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   };
 
   const maskCardNumber = (cardNumber: string) => {
@@ -102,22 +89,16 @@ const BankCardManagement = () => {
     }
 
     try {
-      // 模拟 API 调用
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      const newCard = {
-        id: Date.now(),
-        bankName: banks.find((b) => b.id === formValue.bankName)?.name,
+      const bank = banks.find(b => b.id === formValue.bankName);
+      const newCard = await bankCardApi.add({
+        bankName: bank?.name || '',
         cardNumber: formValue.cardNumber,
         holderName: formValue.holderName,
-        isDefault: bankCards.length === 0,
-        createdAt: new Date().toISOString().split('T')[0],
-      };
+      });
 
       setBankCards([...bankCards, newCard]);
       setAddDialogVisible(false);
       setFormValue({ bankName: '', cardNumber: '', holderName: '' });
-
       MessagePlugin.success('银行卡绑定成功');
     } catch (error) {
       logger.error('绑定银行卡失败:', error);
@@ -127,16 +108,13 @@ const BankCardManagement = () => {
 
   const handleSetDefault = async (cardId: number) => {
     try {
-      // 模拟 API 调用
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
+      await bankCardApi.setDefault(cardId);
       setBankCards(
-        bankCards.map((card) => ({
+        bankCards.map(card => ({
           ...card,
           isDefault: card.id === cardId,
         }))
       );
-
       MessagePlugin.success('已设为默认银行卡');
     } catch (error) {
       logger.error('设置默认银行卡失败:', error);
@@ -144,20 +122,19 @@ const BankCardManagement = () => {
     }
   };
 
-  const handleDeleteClick = (card: any) => {
+  const handleDeleteClick = (card: BankCard) => {
     setSelectedCard(card);
     setDeleteDialogVisible(true);
   };
 
   const handleDeleteCard = async () => {
-    try {
-      // 模拟 API 调用
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (!selectedCard) return;
 
-      setBankCards(bankCards.filter((card) => card.id !== selectedCard.id));
+    try {
+      await bankCardApi.delete(selectedCard.id);
+      setBankCards(bankCards.filter(card => card.id !== selectedCard.id));
       setDeleteDialogVisible(false);
       setSelectedCard(null);
-
       MessagePlugin.success('银行卡已解绑');
     } catch (error) {
       logger.error('解绑银行卡失败:', error);
@@ -166,9 +143,9 @@ const BankCardManagement = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900">
+    <div className="min-h-screen bg-gradient-to-b from-black to-neutral-950 pb-24">
       {/* 顶部导航栏 */}
-      <div className="sticky top-0 z-50 bg-gray-900/95 backdrop-blur-sm border-b border-amber-500/20">
+      <div className="sticky top-0 z-50 bg-neutral-950/95 backdrop-blur-sm border-b border-amber-500/20">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
           <button
             onClick={() => navigate(-1)}
@@ -195,7 +172,7 @@ const BankCardManagement = () => {
         <Card
           bordered
           theme="dark"
-          className="mb-4 !bg-gray-800/50 !border-amber-500/30"
+          className="mb-4 !bg-neutral-900/80 !border-amber-500/30"
         >
           <div className="flex items-start gap-3">
             <InfoCircleIcon size="20px" className="text-amber-400 mt-0.5" />
@@ -220,7 +197,7 @@ const BankCardManagement = () => {
           <Card
             bordered
             theme="dark"
-            className="!bg-gray-800/50 !border-amber-500/30"
+            className="!bg-neutral-900/80 !border-amber-500/30"
           >
             <div className="text-center py-12">
               <WalletIcon size="64px" className="text-gray-600 mx-auto mb-3" />
@@ -237,19 +214,18 @@ const BankCardManagement = () => {
           </Card>
         ) : (
           <div className="space-y-4">
-            {bankCards.map((card) => (
+            {bankCards.map(card => (
               <Card
                 key={card.id}
                 bordered
                 theme="dark"
-                className="!bg-gray-800/50 !border-amber-500/30"
+                className="!bg-neutral-900/80 !border-amber-500/30"
               >
                 <div className="flex items-start gap-4">
                   {/* 银行图标 */}
                   <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-600 to-gray-700 flex items-center justify-center text-2xl">
                     🏦
                   </div>
-
                   {/* 银行卡信息 */}
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
@@ -272,7 +248,6 @@ const BankCardManagement = () => {
                       绑定时间：{card.createdAt}
                     </div>
                   </div>
-
                   {/* 操作按钮 */}
                   <div className="flex flex-col gap-2">
                     {!card.isDefault && (
@@ -309,7 +284,7 @@ const BankCardManagement = () => {
         )}
       </div>
 
-      {/* 添加银行卡弹窗 - 响应式 */}
+      {/* 添加银行卡弹窗 */}
       <Dialog
         visible={addDialogVisible}
         header="添加银行卡"
@@ -317,14 +292,14 @@ const BankCardManagement = () => {
         style={{ maxWidth: '450px' }}
         onClose={() => setAddDialogVisible(false)}
         footer={null}
-        className="!bg-gray-800 !text-white"
+        className="!bg-neutral-900 !text-white"
       >
         <div className="space-y-5">
           {/* 选择银行 */}
           <div>
             <div className="text-white font-medium mb-3">选择银行</div>
             <div className="grid grid-cols-4 gap-2">
-              {banks.map((bank) => (
+              {banks.map(bank => (
                 <div
                   key={bank.id}
                   onClick={() =>
@@ -333,7 +308,7 @@ const BankCardManagement = () => {
                   className={`p-3 rounded-lg border-2 cursor-pointer transition-all flex flex-col items-center gap-1 ${
                     formValue.bankName === bank.id
                       ? 'border-amber-500 bg-amber-500/10'
-                      : 'border-gray-600 bg-gray-700/50 hover:border-amber-500/50'
+                      : 'border-gray-600 bg-neutral-700/50 hover:border-amber-500/50'
                   }`}
                 >
                   <div className="text-2xl">{bank.icon}</div>
@@ -345,7 +320,7 @@ const BankCardManagement = () => {
 
           {/* 卡号 */}
           <div>
-            <div className="text-white font-medium mb-2">银行卡号</div>
+            <div className="text-white font-medium mb-3">银行卡号</div>
             <Input
               size="large"
               type="number"
@@ -355,13 +330,13 @@ const BankCardManagement = () => {
                 setFormValue({ ...formValue, cardNumber: value })
               }
               maxLength={16}
-              className="!bg-gray-700/50 !text-white"
+              className="!bg-neutral-700/50 !text-white"
             />
           </div>
 
           {/* 持卡人姓名 */}
           <div>
-            <div className="text-white font-medium mb-2">持卡人姓名</div>
+            <div className="text-white font-medium mb-3">持卡人姓名</div>
             <Input
               size="large"
               placeholder="请输入持卡人姓名"
@@ -369,7 +344,7 @@ const BankCardManagement = () => {
               onChange={(value) =>
                 setFormValue({ ...formValue, holderName: value })
               }
-              className="!bg-gray-700/50 !text-white"
+              className="!bg-neutral-700/50 !text-white"
             />
           </div>
 
@@ -395,7 +370,7 @@ const BankCardManagement = () => {
         </div>
       </Dialog>
 
-      {/* 解绑确认弹窗 - 响应式 */}
+      {/* 解绑确认弹窗 */}
       <Dialog
         visible={deleteDialogVisible}
         header="确认解绑"
@@ -406,17 +381,17 @@ const BankCardManagement = () => {
           setSelectedCard(null);
         }}
         footer={null}
-        className="!bg-gray-800 !text-white"
+        className="!bg-neutral-900 !text-white"
       >
         <div className="space-y-4 text-center">
           <div className="flex justify-center">
-            <InfoCircleIcon size="48px" className="text-amber-400" />
+            <WalletIcon size="48px" className="text-amber-400" />
           </div>
           <div className="text-white">
             确定要解绑以下银行卡吗？
           </div>
           {selectedCard && (
-            <div className="p-3 rounded-lg bg-gray-700/50 text-gray-300">
+            <div className="p-3 rounded-lg bg-neutral-700/50 text-gray-300">
               <div className="font-medium">{selectedCard.bankName}</div>
               <div className="font-mono">{maskCardNumber(selectedCard.cardNumber)}</div>
             </div>
@@ -424,7 +399,7 @@ const BankCardManagement = () => {
           <div className="text-gray-400 text-sm">
             解绑后，该银行卡将无法用于提现
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 mt-2">
             <Button
               theme="default"
               variant="outline"

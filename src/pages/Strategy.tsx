@@ -7,14 +7,13 @@ import {
   InputNumber,
   Space,
   Table,
-  Row,
-  Col,
   Statistic,
   Tabs,
   Divider,
   MessagePlugin,
 } from 'tdesign-react';
-import { PlayCircleIcon } from 'tdesign-icons-react';
+import { PlayCircleIcon, ChevronLeftIcon } from 'tdesign-icons-react';
+import { useNavigate } from 'react-router-dom';
 import * as echarts from 'echarts';
 import {
   BacktestConfig,
@@ -24,15 +23,16 @@ import {
   runBacktest,
   optimizeStrategy,
 } from '../services/strategy.service';
-import { fetchKLineData } from '../services/shuhai.service';
+import { fetchKLineData } from '../services/shuhai-backend.service';
 
 const { Option } = Select;
 const { DatePickerRangePicker } = DatePicker;
 
 const Strategy: React.FC = () => {
+  const navigate = useNavigate();
   // 策略选择
   const [selectedStrategy, setSelectedStrategy] = useState<string>('maCross');
-  const [selectedSymbol, setSelectedSymbol] = useState<string>('AG2406');
+  const [selectedSymbol, setSelectedSymbol] = useState<string>('DAX');
 
   // 回测配置
   const [backtestConfig, setBacktestConfig] = useState<Partial<BacktestConfig>>({
@@ -102,6 +102,7 @@ const Strategy: React.FC = () => {
         title: {
           text: '权益曲线',
           left: 'center',
+          textStyle: { color: '#fbbf24' }
         },
         tooltip: {
           trigger: 'axis',
@@ -111,11 +112,13 @@ const Strategy: React.FC = () => {
           data: dates,
           axisLabel: {
             rotate: 45,
+            color: '#999'
           },
         },
         yAxis: {
           type: 'value',
           name: '权益(元)',
+          axisLabel: { color: '#999' }
         },
         series: [
           {
@@ -149,6 +152,7 @@ const Strategy: React.FC = () => {
         title: {
           text: '回撤曲线',
           left: 'center',
+          textStyle: { color: '#fbbf24' }
         },
         tooltip: {
           trigger: 'axis',
@@ -161,12 +165,14 @@ const Strategy: React.FC = () => {
           data: dates,
           axisLabel: {
             rotate: 45,
+            color: '#999'
           },
         },
         yAxis: {
           type: 'value',
           name: '回撤(%)',
           max: 100,
+          axisLabel: { color: '#999' }
         },
         series: [
           {
@@ -200,6 +206,7 @@ const Strategy: React.FC = () => {
         title: {
           text: '月度收益',
           left: 'center',
+          textStyle: { color: '#fbbf24' }
         },
         tooltip: {
           trigger: 'axis',
@@ -212,10 +219,12 @@ const Strategy: React.FC = () => {
         xAxis: {
           type: 'category',
           data: months,
+          axisLabel: { color: '#999' }
         },
         yAxis: {
           type: 'value',
           name: '收益率(%)',
+          axisLabel: { color: '#999' }
         },
         series: [
           {
@@ -243,7 +252,6 @@ const Strategy: React.FC = () => {
     setIsBacktesting(true);
 
     try {
-      // 获取K线数据
       const endDate = Math.floor(dateRange[1].getTime() / 1000);
       const startDate = Math.floor(dateRange[0].getTime() / 1000);
 
@@ -299,7 +307,6 @@ const Strategy: React.FC = () => {
     setIsOptimizing(true);
 
     try {
-      // 获取K线数据
       const endDate = Math.floor(dateRange[1].getTime() / 1000);
       const startDate = Math.floor(dateRange[0].getTime() / 1000);
 
@@ -360,22 +367,6 @@ const Strategy: React.FC = () => {
     }
   };
 
-  // 应用优化参数
-  const handleApplyParams = (params: Record<string, number>) => {
-    setBacktestConfig(prev => ({
-      ...prev,
-      ...params,
-    }));
-
-    // 更新策略参数
-    const strategyParams = STRATEGY_PARAMS[selectedStrategy];
-    if (strategyParams) {
-      strategyParams.parameters = { ...strategyParams.parameters, ...params };
-    }
-
-    MessagePlugin.success('参数已应用,请重新运行回测');
-  };
-
   // 交易记录表格列
   const tradeColumns = [
     {
@@ -388,7 +379,7 @@ const Strategy: React.FC = () => {
       title: '类型',
       width: 80,
       cell: (context: any) => (
-        <span style={{ color: context.row.type === 'buy' ? '#00f29a' : '#f5222d' }}>
+        <span className={context.row.type === 'buy' ? 'text-green-400' : 'text-red-400'}>
           {context.row.type === 'buy' ? '买入' : '卖出'}
         </span>
       ),
@@ -417,7 +408,7 @@ const Strategy: React.FC = () => {
       cell: (context: any) => {
         const profit = context.row.profit;
         return (
-          <span style={{ color: profit >= 0 ? '#00f29a' : '#f5222d' }}>
+          <span className={profit >= 0 ? 'text-green-400' : 'text-red-400'}>
             {profit >= 0 ? '+' : ''}{profit.toFixed(2)}
           </span>
         );
@@ -430,7 +421,7 @@ const Strategy: React.FC = () => {
       cell: (context: any) => {
         const profitPercent = context.row.profitPercent;
         return (
-          <span style={{ color: profitPercent >= 0 ? '#00f29a' : '#f5222d' }}>
+          <span className={profitPercent >= 0 ? 'text-green-400' : 'text-red-400'}>
             {profitPercent >= 0 ? '+' : ''}{profitPercent.toFixed(2)}%
           </span>
         );
@@ -439,6 +430,7 @@ const Strategy: React.FC = () => {
     {
       colKey: 'entryTime',
       title: '开仓时间',
+      width: 150,
       cell: (context: any) => new Date(context.row.entryTime).toLocaleString(),
     },
   ];
@@ -479,7 +471,7 @@ const Strategy: React.FC = () => {
       title: '操作',
       width: 100,
       cell: (context: any) => (
-        <Button size="small" onClick={() => handleApplyParams(context.row.params)}>
+        <Button size="small" onClick={() => alert('应用参数: ' + JSON.stringify(context.row.params))}>
           应用
         </Button>
       ),
@@ -487,129 +479,135 @@ const Strategy: React.FC = () => {
   ];
 
   return (
-    <div style={{ padding: '20px', backgroundColor: '#121212', minHeight: '100vh' }}>
-      <h1 style={{ color: '#fff', marginBottom: '24px' }}>智能交易策略</h1>
+    <div className="min-h-screen bg-gradient-to-b from-black to-neutral-950 pb-20 pt-4">
+      {/* 顶部导航栏 */}
+      <div className="sticky top-0 z-50 bg-neutral-950/95 backdrop-blur-sm border-b border-amber-500/20">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center">
+          <button
+            onClick={() => navigate(-1)}
+            className="text-amber-400 hover:text-amber-300 transition-colors"
+          >
+            <ChevronLeftIcon size="24px" />
+          </button>
+          <h1 className="text-xl font-bold text-white">智能交易策略</h1>
+          <div className="w-6" />
+        </div>
+      </div>
 
-      <Row gutter={16}>
-        <Col span={6}>
-          <Card title="策略配置" theme="dark">
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <div>
-                <div style={{ color: '#fff', marginBottom: '8px' }}>选择策略</div>
-                <Select
-                  value={selectedStrategy}
-                  onChange={setSelectedStrategy}
-                  style={{ width: '100%' }}
-                >
-                  {Object.entries(STRATEGY_PARAMS).map(([key, value]) => (
-                    <Option key={key} value={key}>
-                      {value.name}
-                    </Option>
-                  ))}
-                </Select>
-              </div>
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-6 gap-4">
+          {/* 策略配置 */}
+          <div className="lg:col-span-2">
+            <Card title="策略配置" theme="dark" className="!bg-neutral-900 !border-neutral-800">
+              <Space direction="vertical" className="w-full">
+                <div>
+                  <div className="text-white text-sm mb-2">选择策略</div>
+                  <Select
+                    value={selectedStrategy}
+                    onChange={setSelectedStrategy}
+                    className="w-full"
+                  >
+                    {Object.entries(STRATEGY_PARAMS).map(([key, value]) => (
+                      <Option key={key} value={key}>
+                        {value.name}
+                      </Option>
+                    ))}
+                  </Select>
+                </div>
 
-              <div>
-                <div style={{ color: '#fff', marginBottom: '8px' }}>选择品种</div>
-                <Select
-                  value={selectedSymbol}
-                  onChange={setSelectedSymbol}
-                  style={{ width: '100%' }}
-                >
-                  <Option value="AG2406">白银2406</Option>
-                  <Option value="AU2406">黄金2406</Option>
-                  <Option value="CU2406">铜2406</Option>
-                  <Option value="ZN2406">锌2406</Option>
-                </Select>
-              </div>
+                <div>
+                  <div className="text-white text-sm mb-2">选择品种</div>
+                  <Select
+                    value={selectedSymbol}
+                    onChange={setSelectedSymbol}
+                    className="w-full"
+                  >
+                    <Option value="DAX">德指DAX</Option>
+                    <Option value="US30">美指US30</Option>
+                    <Option value="NAS100">纳指NAS100</Option>
+                    <Option value="CL">美原油CL</Option>
+                    <Option value="GC">黄金GC</Option>
+                    <Option value="SI">白银SI</Option>
+                  </Select>
+                </div>
 
-              <div>
-                <div style={{ color: '#fff', marginBottom: '8px' }}>日期范围</div>
-                <DatePickerRangePicker
-                  value={dateRange}
-                  onChange={setDateRange}
-                  style={{ width: '100%' }}
-                />
-              </div>
+                <div>
+                  <div className="text-white text-sm mb-2">日期范围</div>
+                  <DatePickerRangePicker
+                    value={dateRange}
+                    onChange={setDateRange}
+                    className="w-full"
+                  />
+                </div>
 
-              <div>
-                <div style={{ color: '#fff', marginBottom: '8px' }}>初始资金</div>
-                <InputNumber
-                  value={backtestConfig.initialCapital}
-                  onChange={(value: number) =>
-                    setBacktestConfig({ ...backtestConfig, initialCapital: value })
-                  }
-                  style={{ width: '100%' }}
-                />
-              </div>
+                <div>
+                  <div className="text-white text-sm mb-2">初始资金</div>
+                  <InputNumber
+                    value={backtestConfig.initialCapital}
+                    onChange={(value: number) =>
+                      setBacktestConfig({ ...backtestConfig, initialCapital: value })
+                    }
+                    className="w-full"
+                  />
+                </div>
 
-              <div>
-                <div style={{ color: '#fff', marginBottom: '8px' }}>手续费率 (%)</div>
-                <InputNumber
-                  value={backtestConfig.commission}
-                  onChange={(value: number) =>
-                    setBacktestConfig({ ...backtestConfig, commission: value / 100 })
-                  }
-                  step={0.001}
-                  min={0}
-                  style={{ width: '100%' }}
-                />
-              </div>
+                <div>
+                  <div className="text-white text-sm mb-2">手续费率 (%)</div>
+                  <InputNumber
+                    value={backtestConfig.commission}
+                    onChange={(value: number) =>
+                      setBacktestConfig({ ...backtestConfig, commission: value / 100 })
+                    }
+                    step={0.001}
+                    min={0}
+                    className="w-full"
+                  />
+                </div>
 
-              <div>
-                <div style={{ color: '#fff', marginBottom: '8px' }}>杠杆倍数</div>
-                <InputNumber
-                  value={backtestConfig.leverage}
-                  onChange={(value: number) =>
-                    setBacktestConfig({ ...backtestConfig, leverage: value })
-                  }
-                  min={1}
-                  max={100}
-                  style={{ width: '100%' }}
-                />
-              </div>
+                <div>
+                  <div className="text-white text-sm mb-2">杠杆倍数</div>
+                  <InputNumber
+                    value={backtestConfig.leverage}
+                    onChange={(value: number) =>
+                      setBacktestConfig({ ...backtestConfig, leverage: value })
+                    }
+                    min={1}
+                    max={100}
+                    className="w-full"
+                  />
+                </div>
 
-              <Button
-                theme="primary"
-                icon={<PlayCircleIcon />}
-                loading={isBacktesting}
-                onClick={handleRunBacktest}
-                style={{ width: '100%' }}
-              >
-                运行回测
-              </Button>
-
-              <Button
-                variant="outline"
-                loading={isOptimizing}
-                onClick={handleOptimize}
-                style={{ width: '100%' }}
-              >
-                参数优化
-              </Button>
-            </Space>
-          </Card>
-
-          {backtestResult && (
-            <Card title="策略描述" theme="dark" style={{ marginTop: '16px' }}>
-              <p style={{ color: '#999' }}>
-                {STRATEGY_PARAMS[selectedStrategy]?.description}
-              </p>
-              <Divider />
-              <div style={{ color: '#999', fontSize: '12px' }}>
-                参数: {JSON.stringify(STRATEGY_PARAMS[selectedStrategy]?.parameters, null, 2)}
-              </div>
+                <div className="flex gap-2">
+                  <Button
+                    theme="warning"
+                    icon={<PlayCircleIcon />}
+                    loading={isBacktesting}
+                    onClick={handleRunBacktest}
+                    className="flex-1"
+                  >
+                    运行回测
+                  </Button>
+                  <Button
+                    variant="outline"
+                    theme="warning"
+                    loading={isOptimizing}
+                    onClick={handleOptimize}
+                    className="flex-1"
+                  >
+                    参数优化
+                  </Button>
+                </div>
+              </Space>
             </Card>
-          )}
-        </Col>
+          </div>
 
-        <Col span={18}>
-          {backtestResult ? (
-            <>
-              {/* 核心指标 */}
-              <Row gutter={16} style={{ marginBottom: '16px' }}>
-                <Col span={4}>
-                  <Card theme="dark" hoverShadow>
+          {/* 回测结果 */}
+          <div className="lg:col-span-4">
+            {backtestResult ? (
+              <>
+                {/* 核心指标 */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                  <Card theme="dark" className="!bg-neutral-900 !border-neutral-800">
                     <Statistic
                       title="总收益率"
                       value={backtestResult.summary.totalReturn}
@@ -618,9 +616,7 @@ const Strategy: React.FC = () => {
                       theme={backtestResult.summary.totalReturn >= 0 ? 'success' : 'error'}
                     />
                   </Card>
-                </Col>
-                <Col span={4}>
-                  <Card theme="dark" hoverShadow>
+                  <Card theme="dark" className="!bg-neutral-900 !border-neutral-800">
                     <Statistic
                       title="最大回撤"
                       value={backtestResult.summary.maxDrawdown}
@@ -628,143 +624,161 @@ const Strategy: React.FC = () => {
                       theme="error"
                     />
                   </Card>
-                </Col>
-                <Col span={4}>
-                  <Card theme="dark" hoverShadow>
+                  <Card theme="dark" className="!bg-neutral-900 !border-neutral-800">
                     <Statistic
                       title="夏普比率"
                       value={backtestResult.summary.sharpeRatio}
                       precision={3}
                     />
                   </Card>
-                </Col>
-                <Col span={4}>
-                  <Card theme="dark" hoverShadow>
+                  <Card theme="dark" className="!bg-neutral-900 !border-neutral-800">
                     <Statistic
                       title="胜率"
                       value={backtestResult.summary.winRate}
                       suffix="%"
                     />
                   </Card>
-                </Col>
-                <Col span={4}>
-                  <Card theme="dark" hoverShadow>
+                  <Card theme="dark" className="!bg-neutral-900 !border-neutral-800">
                     <Statistic
                       title="交易次数"
                       value={backtestResult.summary.totalTrades}
                     />
                   </Card>
-                </Col>
-                <Col span={4}>
-                  <Card theme="dark" hoverShadow>
+                  <Card theme="dark" className="!bg-neutral-900 !border-neutral-800">
                     <Statistic
                       title="盈亏比"
                       value={backtestResult.summary.profitFactor}
                       precision={2}
                     />
                   </Card>
-                </Col>
-              </Row>
-
-              {/* 图表区域 */}
-              <Tabs defaultValue="equity" theme="dark" style={{ marginBottom: '16px' }}>
-                <Tabs.TabPanel value="equity" label="权益曲线">
-                  <Card theme="dark">
-                    <div ref={equityChartRef} style={{ height: '400px' }} />
-                  </Card>
-                </Tabs.TabPanel>
-                <Tabs.TabPanel value="drawdown" label="回撤曲线">
-                  <Card theme="dark">
-                    <div ref={drawdownChartRef} style={{ height: '400px' }} />
-                  </Card>
-                </Tabs.TabPanel>
-                <Tabs.TabPanel value="monthly" label="月度收益">
-                  <Card theme="dark">
-                    <div ref={monthlyChartRef} style={{ height: '400px' }} />
-                  </Card>
-                </Tabs.TabPanel>
-              </Tabs>
-
-              {/* 详细指标 */}
-              <Card title="详细指标" theme="dark" style={{ marginBottom: '16px' }}>
-                <Row gutter={16}>
-                  <Col span={8}>
+                  <Card theme="dark" className="!bg-neutral-900 !border-neutral-800">
                     <Statistic
                       title="年化收益率"
                       value={backtestResult.summary.annualizedReturn}
                       suffix="%"
                       trend={backtestResult.summary.annualizedReturn >= 0 ? 'up' : 'down'}
+                      theme={backtestResult.summary.annualizedReturn >= 0 ? 'success' : 'error'}
                     />
-                  </Col>
-                  <Col span={8}>
+                  </Card>
+                  <Card theme="dark" className="!bg-neutral-900 !border-neutral-800">
                     <Statistic
                       title="平均盈利"
                       value={backtestResult.summary.avgProfit}
                       precision={2}
                       theme="success"
                     />
-                  </Col>
-                  <Col span={8}>
+                  </Card>
+                  <Card theme="dark" className="!bg-neutral-900 !border-neutral-800">
                     <Statistic
                       title="平均亏损"
                       value={backtestResult.summary.avgLoss}
                       precision={2}
                       theme="error"
                     />
-                  </Col>
-                </Row>
-                <Divider />
-                <Row gutter={16}>
-                  <Col span={8}>
-                    <Statistic title="波动率" value={backtestResult.riskMetrics.volatility.toFixed(2)} suffix="%" />
-                  </Col>
-                  <Col span={8}>
-                    <Statistic title="VaR(95%)" value={backtestResult.riskMetrics.var95.toFixed(2)} />
-                  </Col>
-                  <Col span={8}>
-                    <Statistic title="VaR(99%)" value={backtestResult.riskMetrics.var99.toFixed(2)} />
-                  </Col>
-                </Row>
-              </Card>
+                  </Card>
+                </div>
 
-              {/* 交易记录 */}
-              <Card title="交易记录" theme="dark" style={{ marginBottom: '16px' }}>
-                <Table
-                  data={backtestResult.trades}
-                  columns={tradeColumns}
-                  pagination={{
-                    pageSize: 10,
-                  }}
-                  hover
-                  theme="dark"
-                />
-              </Card>
+                {/* 图表区域 */}
+                <Tabs defaultValue="equity" theme="dark" className="mb-4">
+                  <Tabs.TabPanel value="equity" label="权益曲线">
+                    <Card theme="dark" className="!bg-neutral-900 !border-neutral-800">
+                      <div ref={equityChartRef} style={{ height: '400px' }} />
+                    </Card>
+                  </Tabs.TabPanel>
+                  <Tabs.TabPanel value="drawdown" label="回撤曲线">
+                    <Card theme="dark" className="!bg-neutral-900 !border-neutral-800">
+                      <div ref={drawdownChartRef} style={{ height: '400px' }} />
+                    </Card>
+                  </Tabs.TabPanel>
+                  <Tabs.TabPanel value="monthly" label="月度收益">
+                    <Card theme="dark" className="!bg-neutral-900 !border-neutral-800">
+                      <div ref={monthlyChartRef} style={{ height: '400px' }} />
+                    </Card>
+                  </Tabs.TabPanel>
+                </Tabs>
 
-              {/* 优化结果 */}
-              {optimizationResults.length > 0 && (
-                <Card title="参数优化结果" theme="dark">
+                {/* 详细指标 */}
+                <Card title="详细指标" theme="dark" className="!bg-neutral-900 !border-neutral-800 mb-4">
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    <Card theme="dark" className="!bg-neutral-800/50 !border-neutral-700">
+                      <Statistic
+                        title="年化收益率"
+                        value={backtestResult.summary.annualizedReturn}
+                        suffix="%"
+                        trend={backtestResult.summary.annualizedReturn >= 0 ? 'up' : 'down'}
+                        theme={backtestResult.summary.annualizedReturn >= 0 ? 'success' : 'error'}
+                      />
+                    </Card>
+                    <Card theme="dark" className="!bg-neutral-800/50 !border-neutral-700">
+                      <Statistic
+                        title="平均盈利"
+                        value={backtestResult.summary.avgProfit}
+                        precision={2}
+                        theme="success"
+                      />
+                    </Card>
+                    <Card theme="dark" className="!bg-neutral-800/50 !border-neutral-700">
+                      <Statistic
+                        title="平均亏损"
+                        value={backtestResult.summary.avgLoss}
+                        precision={2}
+                        theme="error"
+                      />
+                    </Card>
+                  </div>
+                  <Divider />
+                  <div className="grid grid-cols-3 gap-4">
+                    <Card theme="dark" className="!bg-neutral-800/50 !border-neutral-700">
+                      <Statistic title="波动率" value={backtestResult.riskMetrics.volatility.toFixed(2)} suffix="%" />
+                    </Card>
+                    <Card theme="dark" className="!bg-neutral-800/50 !border-neutral-700">
+                      <Statistic title="VaR(95%)" value={backtestResult.riskMetrics.var95.toFixed(2)} />
+                    </Card>
+                    <Card theme="dark" className="!bg-neutral-800/50 !border-neutral-700">
+                      <Statistic title="VaR(99%)" value={backtestResult.riskMetrics.var99.toFixed(2)} />
+                    </Card>
+                  </div>
+                </Card>
+
+                {/* 交易记录 */}
+                <Card title="交易记录" theme="dark" className="!bg-neutral-900 !border-neutral-800 mb-4">
                   <Table
-                    data={optimizationResults}
-                    columns={optimizationColumns}
+                    data={backtestResult.trades}
+                    columns={tradeColumns}
                     pagination={{
-                      pageSize: 5,
+                      pageSize: 10,
                     }}
                     hover
                     theme="dark"
                   />
                 </Card>
-              )}
-            </>
-          ) : (
-            <Card theme="dark" style={{ height: '600px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ textAlign: 'center', color: '#666' }}>
-                <PlayCircleIcon size="64px" style={{ marginBottom: '16px' }} />
-                <div>请选择策略并运行回测</div>
-              </div>
-            </Card>
-          )}
-        </Col>
-      </Row>
+
+                {/* 优化结果 */}
+                {optimizationResults.length > 0 && (
+                  <Card title="参数优化结果" theme="dark" className="!bg-neutral-900 !border-neutral-800">
+                    <Table
+                      data={optimizationResults}
+                      columns={optimizationColumns}
+                      pagination={{
+                        pageSize: 5,
+                      }}
+                      hover
+                      theme="dark"
+                    />
+                  </Card>
+                )}
+              </>
+            ) : (
+              <Card theme="dark" className="!bg-neutral-900 !border-neutral-800" style={{ height: '600px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div className="text-center">
+                  <PlayCircleIcon size="64px" className="text-amber-400 mb-4" />
+                  <div className="text-neutral-400">请选择策略并运行回测</div>
+                </div>
+              </Card>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

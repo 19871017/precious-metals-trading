@@ -7,8 +7,10 @@ import { mockAnnouncements } from '../data/mockData';
 import { formatPrice, formatPercent, formatVolume } from '../utils/format';
 import { getQuoteBySymbol } from '../services/shuhai-backend.service';
 import { getAISummary, AISummary } from '../services/ai-analysis.service';
+import { accountApi } from '../services/user.service';
 import wsService, { WebSocketMessage } from '../services/websocket.service';
 import logger from '../utils/logger';
+import { MessagePlugin } from 'tdesign-react';
 
 // 数海API支持的品种列表（只有这6个品种有数据）
 const MARKET_SYMBOLS = [
@@ -41,6 +43,40 @@ export default function Home() {
   const [, setAISummary] = useState<AISummary | null>(null);
   const [, setLoadingAISummary] = useState(false);
   const [isConnected, setIsConnected] = useState(false); // 连接状态
+
+  // 账户数据状态
+  const [account, setAccount] = useState({
+    totalAssets: 0,
+    availableFunds: 0,
+    frozenMargin: 0,
+    dailyPL: 0,
+  });
+  const [loadingAccount, setLoadingAccount] = useState(false);
+
+  // 从API加载账户数据
+  const loadAccountData = async () => {
+    try {
+      setLoadingAccount(true);
+      const accountInfo = await accountApi.getInfo();
+      setAccount({
+        totalAssets: accountInfo.totalBalance,
+        availableFunds: accountInfo.availableBalance,
+        frozenMargin: accountInfo.frozenMargin,
+        dailyPL: accountInfo.realizedPnl,
+      });
+    } catch (error) {
+      logger.error('加载账户数据失败:', error);
+      // 使用默认值
+      setAccount({
+        totalAssets: 0,
+        availableFunds: 0,
+        frozenMargin: 0,
+        dailyPL: 0,
+      });
+    } finally {
+      setLoadingAccount(false);
+    }
+  };
 
   // 从API加载市场数据
   const loadMarketData = async () => {
@@ -190,6 +226,11 @@ export default function Home() {
       }
     };
     loadAISummary();
+  }, [marketData]);
+
+  // 加载账户数据
+  useEffect(() => {
+    loadAccountData();
   }, []);
 
   return (
@@ -235,19 +276,27 @@ export default function Home() {
         <div className="mb-3 grid grid-cols-2 md:grid-cols-4 gap-2">
           <div className="bg-neutral-900 rounded p-2.5 border border-neutral-800">
             <p className="text-xs text-neutral-400 mb-1.5 font-medium">总资产</p>
-            <p className="text-sm font-medium asset-value font-mono">¥1,250,000</p>
+            <p className="text-sm font-medium asset-value font-mono">
+              {loadingAccount ? '...' : `¥${formatPrice(account.totalAssets)}`}
+            </p>
           </div>
           <div className="bg-neutral-900 rounded p-2.5 border border-neutral-800">
             <p className="text-xs text-neutral-400 mb-1.5 font-medium">可用</p>
-            <p className="text-sm font-medium asset-value font-mono">¥850,000</p>
+            <p className="text-sm font-medium asset-value font-mono">
+              {loadingAccount ? '...' : `¥${formatPrice(account.availableFunds)}`}
+            </p>
           </div>
           <div className="bg-neutral-900 rounded p-2.5 border border-neutral-800">
             <p className="text-xs text-neutral-400 mb-1.5 font-medium">占用</p>
-            <p className="text-sm font-medium asset-value font-mono">¥400,000</p>
+            <p className="text-sm font-medium asset-value font-mono">
+              {loadingAccount ? '...' : `¥${formatPrice(account.frozenMargin)}`}
+            </p>
           </div>
           <div className="bg-neutral-900 rounded p-2.5 border border-neutral-800">
             <p className="text-xs text-neutral-400 mb-1.5 font-medium">今日</p>
-            <p className="text-sm font-medium asset-profit font-mono">+¥12,500</p>
+            <p className={`text-sm font-medium font-mono ${account.dailyPL >= 0 ? 'asset-profit' : 'asset-loss'}`}>
+              {loadingAccount ? '...' : `${account.dailyPL >= 0 ? '+' : ''}¥${formatPrice(account.dailyPL)}`}
+            </p>
           </div>
         </div>
 

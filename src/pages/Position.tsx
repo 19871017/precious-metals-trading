@@ -6,11 +6,31 @@ import ReactECharts from 'echarts-for-react';
 import { mockPositions, mockAccount, mockOrders, mockClosedPositions } from '../data/mockData';
 import { formatPrice, formatCurrency } from '../utils/format';
 import { Position as PositionType, ClosedPosition } from '../types';
+import { positionApi, orderApi, accountApi } from '../services/user.service';
+import logger from '../utils/logger';
 
 // 统一的消息提示函数
 const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
   MessagePlugin[type](message);
 };
+
+// 从API数据转换为前端Position类型
+const convertApiPosition = (pos: any): PositionType => ({
+  id: pos.positionId,
+  symbol: pos.productCode,
+  name: pos.productCode,
+  direction: pos.direction.toLowerCase() as 'long' | 'short',
+  quantity: pos.quantity,
+  openPrice: pos.openPrice,
+  currentPrice: pos.currentPrice,
+  stopLoss: pos.stopLoss,
+  takeProfit: pos.takeProfit,
+  leverage: pos.leverage,
+  margin: pos.marginUsed,
+  profitLoss: pos.unrealizedPnl,
+  liquidationPrice: pos.liquidationPrice,
+  openedAt: pos.openedAt,
+});
 
 export default function Position() {
   const [searchParams] = useSearchParams();
@@ -18,15 +38,8 @@ export default function Position() {
   const [currentPage, setCurrentPage] = useState(1);
   const [closedCurrentPage, setClosedCurrentPage] = useState(1);
 
-  // 从 localStorage 加载持仓和订单数据
-  const [positions, setPositions] = useState<Position[]>(() => {
-    try {
-      const saved = localStorage.getItem('trading_positions');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // 从 API 加载持仓和订单数据
+  const [positions, setPositions] = useState<Position[]>([]);
   const [orders, setOrders] = useState(() => {
     try {
       const saved = localStorage.getItem('trading_orders');
@@ -43,9 +56,68 @@ export default function Position() {
   const [selectedPosition, setSelectedPosition] = useState<PositionType | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [showActionPanel, setShowActionPanel] = useState(false);
+  const [loadingPositions, setLoadingPositions] = useState(false);
 
   // 盈亏历史记录（用于绘制趋势图）
   const [profitHistory, setProfitHistory] = useState<{ time: string; profit: number }[]>([]);
+
+  // 从API加载持仓数据
+  const loadPositions = async () => {
+    try {
+      setLoadingPositions(true);
+      const apiPositions = await positionApi.getList();
+      const converted = apiPositions.map(convertApiPosition);
+      setPositions(converted);
+    } catch (error) {
+      logger.error('加载持仓失败:', error);
+      // 使用模拟数据作为后备
+      setPositions(mockPositions);
+    } finally {
+      setLoadingPositions(false);
+    }
+  };
+
+  // 从API加载账户数据
+  const loadAccount = async () => {
+    try {
+      const accountInfo = await accountApi.getInfo();
+      setAccount({
+        totalAssets: accountInfo.totalBalance,
+        availableFunds: accountInfo.availableBalance,
+        frozenMargin: accountInfo.frozenMargin,
+        dailyPL: accountInfo.realizedPnl,
+        riskLevel: accountInfo.riskLevel,
+      });
+    } catch (error) {
+      logger.error('加载账户数据失败:', error);
+    }
+  };
+
+  // 从API加载订单数据
+  const loadOrders = async () => {
+    try {
+      const apiOrders = await orderApi.getList();
+      setOrders(apiOrders);
+    } catch (error) {
+      logger.error('加载订单失败:', error);
+      // 使用localStorage的数据作为后备
+      try {
+        const saved = localStorage.getItem('trading_orders');
+        if (saved) {
+          setOrders(JSON.parse(saved));
+        }
+      } catch {
+        setOrders(mockOrders);
+      }
+    }
+  };
+
+  // 初始化时加载数据
+  useEffect(() => {
+    loadPositions();
+    loadAccount();
+    loadOrders();
+  }, []);
 
   // 同步数据到 localStorage
   useEffect(() => {

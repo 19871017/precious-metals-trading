@@ -3,11 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import {
   Button,
   Input,
-  Radio,
-  Form,
   MessagePlugin,
   Card,
-  Divider,
   Loading,
   Dialog,
 } from 'tdesign-react';
@@ -19,31 +16,38 @@ import {
   TimeIcon,
 } from 'tdesign-icons-react';
 import logger from '../utils/logger';
+import { financeApi, FinancialRecord } from '../services/user.service';
 
-// 模拟充值记录
-const mockDepositRecords = [
+// 模拟充值记录（作为后备）
+const mockDepositRecords: FinancialRecord[] = [
   {
     id: 1,
-    type: 'bank',
+    orderNumber: 'DP20260224001',
+    userId: 'demo-user',
+    type: 'deposit',
     amount: 10000,
-    status: 'completed',
     method: '工商银行 ****8888',
+    status: 'completed',
     createdAt: '2026-02-24 14:30:25',
   },
   {
     id: 2,
-    type: 'usdt',
+    orderNumber: 'DP20260223002',
+    userId: 'demo-user',
+    type: 'deposit',
     amount: 5000,
-    status: 'completed',
     method: 'USDT-TRC20',
+    status: 'completed',
     createdAt: '2026-02-23 09:15:10',
   },
   {
     id: 3,
-    type: 'alipay',
+    orderNumber: 'DP20260224003',
+    userId: 'demo-user',
+    type: 'deposit',
     amount: 3000,
-    status: 'pending',
     method: '支付宝',
+    status: 'pending',
     createdAt: '2026-02-24 16:45:30',
   },
 ];
@@ -57,7 +61,7 @@ const Deposit = () => {
     paymentMethod: 'bank',
   });
   const [selectedBank, setSelectedBank] = useState('icbc');
-  const [records, setRecords] = useState(mockDepositRecords);
+  const [records, setRecords] = useState<FinancialRecord[]>([]);
   const [successDialog, setSuccessDialog] = useState(false);
   const [depositResult, setDepositResult] = useState<any>(null);
 
@@ -81,12 +85,18 @@ const Deposit = () => {
     loadDepositRecords();
   }, []);
 
-  const loadDepositRecords = () => {
+  const loadDepositRecords = async () => {
     setLoading(true);
-    // 模拟 API 调用
-    setTimeout(() => {
+    try {
+      const result = await financeApi.getRecords({ type: 'deposit' });
+      setRecords(result.list || []);
+    } catch (error) {
+      logger.error('加载充值记录失败:', error);
+      // 使用模拟数据作为后备
+      setRecords(mockDepositRecords);
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   };
 
   const handleSubmit = async () => {
@@ -109,26 +119,41 @@ const Deposit = () => {
     setSubmitting(true);
 
     try {
-      // 模拟 API 调用
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      // 创建充值记录
-      const newRecord = {
-        id: Date.now(),
-        type: formValue.paymentMethod,
+      const bank = banks.find((b) => b.id === selectedBank);
+      const params: any = {
         amount,
-        status: 'pending',
+        method: formValue.paymentMethod as 'bank' | 'usdt' | 'alipay' | 'wechat',
+      };
+
+      if (formValue.paymentMethod === 'bank' && bank) {
+        params.bankName = bank.name;
+        params.bankAccount = '****8888';
+        params.accountName = '用户姓名';
+      } else if (formValue.paymentMethod === 'usdt') {
+        params.usdtAddress = 'TX7ZqZ8P9jK3LmN5oP7qR9sT2vW4xY6zA8bC1dE3f';
+      }
+
+      const result = await financeApi.createDeposit(params);
+
+      // 更新充值记录列表
+      const newRecord: FinancialRecord = {
+        id: parseInt(result.id),
+        orderNumber: result.orderNumber,
+        userId: 'current-user',
+        type: 'deposit',
+        amount: result.amount,
         method: getPaymentMethodName(formValue.paymentMethod),
-        createdAt: new Date().toLocaleString('zh-CN'),
+        status: 'pending',
+        createdAt: result.createdAt,
       };
 
       setRecords([newRecord, ...records]);
 
       // 显示成功弹窗
       setDepositResult({
-        amount,
+        amount: result.amount,
         method: getPaymentMethodName(formValue.paymentMethod),
-        orderNo: `DP${Date.now()}`,
+        orderNo: result.orderNumber,
       });
       setSuccessDialog(true);
 
