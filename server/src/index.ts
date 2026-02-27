@@ -35,13 +35,44 @@ const PORT = process.env.PORT || 3001;
 // 中间件配置
 // ============================================
 
-// 安全头
-app.use(helmet());
+// 安全头配置 - 生产环境使用严格设置
+const helmetConfig = process.env.NODE_ENV === 'production'
+  ? {
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          scriptSrc: ["'self'"],
+          imgSrc: ["'self'", "data:", "https:"],
+          connectSrc: ["'self'", "https:"],
+          fontSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          mediaSrc: ["'self'"],
+          frameSrc: ["'none'"],
+        },
+      },
+      hsts: {
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: true,
+      },
+      noSniff: true,
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    }
+  : {};
 
-// CORS
+app.use(helmet(helmetConfig));
+
+// CORS - 生产环境应使用白名单
+const corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',')
+  : [process.env.CLIENT_URL || 'http://localhost:5173'];
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
-  credentials: true
+  origin: corsOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 // 限流配置
@@ -106,11 +137,11 @@ const marketService = new MarketDataService();
 // ============================================
 
 io.on('connection', (socket) => {
-  console.log(`[WebSocket] Client connected: ${socket.id}`);
+  logger.info(`WebSocket client connected: ${socket.id}`);
 
   // 订阅行情
   socket.on('subscribe:market', (symbols: string[]) => {
-    console.log(`[WebSocket] Client ${socket.id} subscribed to market: ${symbols.join(', ')}`);
+    logger.debug(`Client ${socket.id} subscribed to market: ${symbols.join(', ')}`);
     socket.join('market');
 
     // 立即发送当前行情数据
@@ -120,19 +151,19 @@ io.on('connection', (socket) => {
 
   // 取消订阅行情
   socket.on('unsubscribe:market', () => {
-    console.log(`[WebSocket] Client ${socket.id} unsubscribed from market`);
+    logger.debug(`Client ${socket.id} unsubscribed from market`);
     socket.leave('market');
   });
 
   // 订阅持仓更新
   socket.on('subscribe:positions', (userId: string) => {
-    console.log(`[WebSocket] Client ${socket.id} subscribed to positions: ${userId}`);
+    logger.debug(`Client ${socket.id} subscribed to positions: ${userId}`);
     socket.join(`positions:${userId}`);
   });
 
   // 断开连接
   socket.on('disconnect', () => {
-    console.log(`[WebSocket] Client disconnected: ${socket.id}`);
+    logger.debug(`WebSocket client disconnected: ${socket.id}`);
   });
 });
 
@@ -163,7 +194,7 @@ setInterval(() => {
     const liquidations = riskManager.checkAndLiquidate(account.userId, marketData);
 
     if (liquidations.length > 0) {
-      console.log(`[${new Date().toISOString()}] 用户 ${account.userId} 触发强平:`,
+      logger.warn(`User ${account.userId} triggered liquidation:`,
         liquidations.map(l => `${l.productCode} @ ${l.liquidationPrice}`).join(', ')
       );
     }
@@ -281,14 +312,14 @@ httpServer.listen(PORT, () => {
 
 // 优雅关闭
 process.on('SIGTERM', () => {
-  console.log('正在关闭服务...');
+  logger.info('Shutting down gracefully...');
   marketService.stop();
   stopLossTakeProfitService.stop();
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
-  console.log('正在关闭服务...');
+  logger.info('Shutting down gracefully...');
   marketService.stop();
   stopLossTakeProfitService.stop();
   process.exit(0);

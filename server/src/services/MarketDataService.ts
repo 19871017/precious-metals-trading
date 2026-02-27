@@ -3,15 +3,20 @@ import { pool, query } from '../config/database';
 import axios from 'axios';
 import http from 'http';
 import https from 'https';
+import Logger from '../utils/logger';
 
 // ============================================
 // 行情数据服务 - 数海API + PostgreSQL数据库
 // ============================================
 
+// 创建专用的 logger 实例
+const logger = new Logger('MarketData');
+
 // 数海API配置（使用官方地址，直接访问无需代理）
 const SHUHAI_API_BASE = 'http://ds.cnshuhai.com/stock.php';
-const SHUHAI_USERNAME = 'wu123';
-const SHUHAI_PASSWORD = 'wu123';
+// 从环境变量读取数海API账号密码
+const SHUHAI_USERNAME = process.env.SHUHAI_USERNAME || '';
+const SHUHAI_PASSWORD = process.env.SHUHAI_PASSWORD || '';
 
 // 创建axios实例，禁用代理以避免407错误
 const shuhaiAxios = axios.create({
@@ -67,7 +72,7 @@ export class MarketDataService {
    */
   setSocketIO(io: any): void {
     this.io = io;
-    console.log('[MarketData] Socket.IO instance configured');
+    logger.info('Socket.IO instance configured');
   }
 
   constructor() {
@@ -84,13 +89,13 @@ export class MarketDataService {
       // 测试数据库连接
       await pool.query('SELECT NOW()');
       this.databaseConnected = true;
-      console.log('[MarketData] Database connected successfully');
+      logger.info('Database connected successfully');
 
       // 从数据库加载现有数据
       await this.loadFromDatabase();
     } catch (err: any) {
       this.databaseConnected = false;
-      console.log('[MarketData] Database not available, using memory-only mode');
+      logger.warn('Database not available, using memory-only mode');
       // 初始化内存数据
       this.initializeEmptyMarketData();
     }
@@ -144,9 +149,9 @@ export class MarketDataService {
         });
       }
 
-      console.log(`[MarketData] Loaded ${this.marketData.size} symbols from database`);
+      logger.info(`Loaded ${this.marketData.size} symbols from database`);
     } catch (err: any) {
-      console.error('[MarketData] Failed to load from database:', err.message);
+      logger.error('Failed to load from database', err);
       this.initializeEmptyMarketData();
     }
   }
@@ -191,7 +196,7 @@ export class MarketDataService {
         ]
       );
     } catch (err: any) {
-      console.error(`[MarketData] Failed to save ${productCode} to database:`, err.message);
+      logger.error(`Failed to save ${productCode} to database`, err);
     }
   }
 
@@ -208,16 +213,16 @@ export class MarketDataService {
 
       if (response.data && Array.isArray(response.data) && response.data.length > 0) {
         this.shuhaiAvailable = true;
-        console.log('[MarketData] Shuhai API connected successfully');
+        logger.info('Shuhai API connected successfully');
       } else {
         this.shuhaiAvailable = false;
         this.lastShuhaiError = 'No data returned';
-        console.log('[MarketData] Shuhai API connection failed:', this.lastShuhaiError);
+        logger.warn(`Shuhai API connection failed: ${this.lastShuhaiError}`);
       }
     } catch (err: any) {
       this.shuhaiAvailable = false;
       this.lastShuhaiError = err.message;
-      console.log('[MarketData] Shuhai API connection failed:', err.message);
+      logger.warn(`Shuhai API connection failed: ${err.message}`);
     }
   }
 
@@ -229,18 +234,18 @@ export class MarketDataService {
       // 过滤掉没有shuhaiCode的品种
       const validProducts = ALL_PRODUCTS.filter(p => p.shuhaiCode);
       if (validProducts.length === 0) {
-        console.warn('[MarketData] No valid shuhai products to fetch');
+        logger.warn('No valid shuhai products to fetch');
         return [];
       }
 
       const symbols = validProducts.map(p => p.shuhaiCode).join(',');
       const url = `${SHUHAI_API_BASE}?type=stock&u=${SHUHAI_USERNAME}&p=${SHUHAI_PASSWORD}&symbol=${symbols}`;
 
-      console.log(`[MarketData] Fetching batch quotes from Shuhai API: ${url}`);
+      logger.debug(`Fetching batch quotes from Shuhai API`);
       const response = await shuhaiAxios.get(url);
 
       if (!response.data || !Array.isArray(response.data)) {
-        console.error('[MarketData] Invalid response from Shuhai API');
+        logger.error('Invalid response from Shuhai API');
         return [];
       }
 
@@ -260,7 +265,7 @@ export class MarketDataService {
         const productCode = shuhaiCodeToProduct[shuhaiCode];
 
         if (!productCode) {
-          console.log(`[MarketData] Unknown shuhai code: ${shuhaiCode}`);
+          logger.debug(`Unknown shuhai code: ${shuhaiCode}`);
           continue;
         }
 
@@ -271,7 +276,7 @@ export class MarketDataService {
 
         // 如果新数据的价格为0或无效，跳过更新，保持旧的价格
         if (lastPrice === 0) {
-          console.warn(`[MarketData] No valid price data for ${productCode}, keeping previous price`);
+          logger.warn(`No valid price data for ${productCode}, keeping previous price`);
           continue;
         }
 
@@ -293,7 +298,7 @@ export class MarketDataService {
         results.push(marketData);
         this.marketData.set(productCode, marketData);
         updatedSymbols.push(productCode);
-        console.log(`[MarketData] Updated ${productCode}: ${lastPrice} (${marketData.changePercent > 0 ? '+' : ''}${marketData.changePercent.toFixed(2)}%)`);
+        logger.debug(`Updated ${productCode}: ${lastPrice} (${marketData.changePercent > 0 ? '+' : ''}${marketData.changePercent.toFixed(2)}%)`);
       }
 
       // 通过 WebSocket 推送更新的行情数据
@@ -304,12 +309,12 @@ export class MarketDataService {
           data: results,
           timestamp: Date.now()
         });
-        console.log(`[MarketData] Pushed ${updatedSymbols.length} symbols via WebSocket`);
+        logger.debug(`Pushed ${updatedSymbols.length} symbols via WebSocket`);
       }
 
       return results;
     } catch (err: any) {
-      console.error('[MarketData] Failed to fetch batch quotes:', err.message);
+      logger.error('Failed to fetch batch quotes', err);
       // 返回空数组，让系统使用缓存的数据
       return [];
     }
@@ -328,10 +333,10 @@ export class MarketDataService {
         await this.saveToDatabase(data.productCode, data);
       }
 
-      console.log(`[MarketData] Updated ${marketDataList.length}/${ALL_PRODUCTS.length} symbols from Shuhai API`);
+      logger.debug(`Updated ${marketDataList.length}/${ALL_PRODUCTS.length} symbols from Shuhai API`);
     } else {
       // 数海API不可用，尝试重新连接
-      console.log('[MarketData] Shuhai API not available, retrying...');
+      logger.debug('Shuhai API not available, retrying...');
       await this.checkShuhaiAvailability();
     }
 
@@ -355,11 +360,11 @@ export class MarketDataService {
               changePercent: parseFloat(row.change_percent) || 0,
               timestamp: row.updated_at || new Date()
             });
-            console.log(`[MarketData] Loaded ${row.product_code} from database: ${row.price}`);
+            logger.debug(`Loaded ${row.product_code} from database: ${row.price}`);
           }
         }
       } catch (err: any) {
-        console.error('[MarketData] Failed to load from database:', err.message);
+        logger.error('Failed to load from database', err);
       }
     }
   }
@@ -368,7 +373,7 @@ export class MarketDataService {
    * 启动价格更新
    */
   private startPriceUpdate(): void {
-    console.log('[MarketData] Starting price update interval (500ms)');
+    logger.info('Starting price update interval (500ms)');
     // 固定500ms更新一次
     this.updateInterval = setInterval(async () => {
       await this.updateMarketData();

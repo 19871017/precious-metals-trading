@@ -24,29 +24,7 @@ export interface RegisterResponse {
 
 // 登录API
 export async function login(username: string, password: string): Promise<LoginResponse> {
-  // 开发模式: 演示登录,任何用户名密码都可以登录
-  if (import.meta.env.DEV) {
-    const demoUser: UserInfo = {
-      id: 'demo-user-001',
-      username: username,
-      role: 'USER',
-      realName: '演示用户',
-      phone: '13800138000',
-      email: `${username}@demo.com`,
-    };
-
-    const demoToken = 'demo-token-' + Date.now();
-
-    localStorage.setItem('token', demoToken);
-    localStorage.setItem('user', JSON.stringify(demoUser));
-
-    return {
-      token: demoToken,
-      user: demoUser,
-    };
-  }
-
-  // 生产模式: 调用真实API
+  // 调用后端API进行认证
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
     headers: {

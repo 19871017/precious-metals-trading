@@ -11,10 +11,13 @@ import {
   MarketData
 } from '../types';
 import { Calculator } from '../utils/calculator';
+import Logger from '../utils/logger';
 
 // ============================================
 // 订单管理器
 // ============================================
+
+const logger = new Logger('OrderManager');
 
 export class OrderManager {
   private orders: Map<string, Order> = new Map();
@@ -101,7 +104,7 @@ export class OrderManager {
       // 注意：实际保证金检查在API路由中已完成
       const marginWarning = order.quantity > 100 ? true : false;
       if (marginWarning) {
-        console.warn(`[OrderManager] 限价单 ${orderId} 数量较大，请关注保证金`);
+        logger.warn(`Limit order ${orderId} has large quantity, please monitor margin`);
       }
     } else {
       return null;
