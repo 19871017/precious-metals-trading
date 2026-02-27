@@ -7,11 +7,17 @@ import logger from '../utils/logger';
 /**
  * JWT 配置
  */
-// JWT密钥强度验证
-const JWT_SECRET = process.env.JWT_SECRET || 'precious-metals-trading-secret-key-2024-secure-32chars';
+// JWT密钥 - 必须通过环境变量配置
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  logger.error('JWT_SECRET未配置，请在环境变量中设置强随机密钥（至少64字符）');
+  throw new Error('JWT_SECRET not configured');
+}
 
 if (JWT_SECRET.length < 32) {
-  logger.warn('JWT_SECRET is too short (less than 32 characters). Please use a stronger secret key for production.');
+  logger.error('JWT_SECRET长度不足32字符，请设置更强的密钥');
+  throw new Error('JWT_SECRET is too short');
 }
 const ACCESS_TOKEN_EXPIRE = process.env.JWT_ACCESS_TOKEN_EXPIRE || '15m';
 const REFRESH_TOKEN_EXPIRE = process.env.JWT_REFRESH_TOKEN_EXPIRE || '7d';

@@ -1,60 +1,36 @@
 import express from 'express';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
+import redis from '../utils/redis';
+import {
+  register,
+  login,
+  refreshToken,
+  getUserById,
+  resetPassword,
+  generateReferralCode
+} from '../services/auth.service';
 
 const router = express.Router();
 
-// JWT密钥强度验证
-const JWT_SECRET = process.env.JWT_SECRET || 'precious-metals-trading-secret-key-2024-secure-32chars';
+// JWT密钥 - 必须通过环境变量配置
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  logger.error('JWT_SECRET未配置，请在环境变量中设置强随机密钥（至少64字符）');
+  process.exit(1);
+}
 
 if (JWT_SECRET.length < 32) {
-  logger.warn('JWT_SECRET is too short (less than 32 characters). Please use a stronger secret key for production.');
+  logger.error('JWT_SECRET长度不足32字符，请设置更强的密钥');
+  process.exit(1);
 }
 
 // 登录失败次数记录（生产环境应使用Redis）
 const loginAttempts = new Map<string, { count: number; lastAttempt: number; lockedUntil?: number }>();
 
-// 模拟用户数据库（生产环境应使用PostgreSQL）
-const users = new Map<string, any>();
-
 // 验证码存储（生产环境应使用Redis）
 const verificationCodes = new Map<string, { code: string; createdAt: number }>();
-
-// 创建测试管理员账号
-const initUsers = () => {
-  if (users.size === 0) {
-    const adminPassword = bcrypt.hashSync('admin123', 10);
-    users.set('admin', {
-      id: 'admin-001',
-      username: 'admin',
-      password: adminPassword,
-      role: 'ADMIN',
-      realName: '系统管理员',
-      phone: '13800000000',
-      email: 'admin@example.com',
-      createdAt: new Date().toISOString()
-    });
-
-    const userPassword = bcrypt.hashSync('user123', 10);
-    users.set('user', {
-      id: 'user-001',
-      username: 'user',
-      password: userPassword,
-      role: 'USER',
-      realName: '测试用户',
-      phone: '13900000000',
-      email: 'user@example.com',
-      createdAt: new Date().toISOString()
-    });
-
-    // 测试账号已静默初始化，生产环境应使用真实数据库
-  }
-};
-
-// 初始化用户
-initUsers();
 
 // 检查IP是否被锁定
 function isIpLocked(ip: string): boolean {
@@ -124,7 +100,7 @@ router.post('/login', async (req: express.Request, res: express.Response) => {
       const remainingTime = Math.ceil((attempt!.lockedUntil! - Date.now()) / 60000);
       return res.status(429).json({
         code: 429,
-        message: `登录失败次数过多，请${remainingTime}分钟后再试`,
+        message: `登录失败次数过多,请${remainingTime}分钟后再试`,
         data: {
           locked: true,
           remainingTime
@@ -133,78 +109,59 @@ router.post('/login', async (req: express.Request, res: express.Response) => {
       });
     }
 
-    const user = users.get(username);
-
-    if (!user) {
-      const attempt = recordFailedAttempt(clientIp);
-      return res.status(401).json({
-        code: 401,
-        message: '用户名或密码错误',
-        data: {
-          remainingAttempts: attempt.remainingAttempts
-        },
-        timestamp: Date.now()
-      });
-    }
-
-    // 验证密码
-    const isValid = await bcrypt.compare(password, user.password);
-
-    if (!isValid) {
-      const attempt = recordFailedAttempt(clientIp);
-      return res.status(401).json({
-        code: 401,
-        message: '用户名或密码错误',
-        data: {
-          remainingAttempts: attempt.remainingAttempts
-        },
-        timestamp: Date.now()
-      });
-    }
+    // 调用认证服务
+    const result = await login({
+      username,
+      password,
+      ip_address: clientIp,
+      user_agent: req.headers['user-agent']
+    });
 
     // 清除登录失败记录
     clearLoginAttempts(clientIp);
 
-    // 生成JWT Token
-    const token = jwt.sign(
-      {
-        userId: user.id,
-        username: user.username,
-        role: user.role
-      },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
-    // 更新最后登录时间和IP
-    user.lastLoginAt = new Date().toISOString();
-    user.lastLoginIp = clientIp;
-    users.set(username, user);
-
-    console.log(`[Auth] 用户登录成功: ${username} from ${clientIp}`);
+    logger.info(`用户登录成功: ${username} from ${clientIp}`);
 
     res.json({
       code: 0,
       message: '登录成功',
       data: {
-        token,
-        user: {
-          id: user.id,
-          username: user.username,
-          role: user.role,
-          realName: user.realName,
-          phone: user.phone,
-          email: user.email
-        }
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+        expires_in: result.expires_in,
+        user: result.user
       },
       timestamp: Date.now()
     });
   } catch (error: any) {
-    console.error('[Auth] 登录错误:', error);
-    res.json({
-      code: 500,
-      message: '服务器内部错误',
-      data: null,
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || 'unknown';
+
+    // 记录登录失败
+    const attempt = recordFailedAttempt(clientIp);
+    const remainingAttempts = attempt.remainingAttempts;
+    const isLocked = attempt.lockedUntil && attempt.lockedUntil > Date.now();
+
+    logger.error('[Auth] 登录错误:', error.message);
+
+    if (isLocked) {
+      const remainingTime = Math.ceil((attempt.lockedUntil! - Date.now()) / 60000);
+      return res.status(429).json({
+        code: 429,
+        message: `登录失败次数过多,请${remainingTime}分钟后再试`,
+        data: {
+          locked: true,
+          remainingTime
+        },
+        timestamp: Date.now()
+      });
+    }
+
+    return res.status(401).json({
+      code: 401,
+      message: error.message || '用户名或密码错误',
+      data: {
+        remainingAttempts
+      },
       timestamp: Date.now()
     });
   }
@@ -213,7 +170,7 @@ router.post('/login', async (req: express.Request, res: express.Response) => {
 // 用户注册
 router.post('/register', async (req: express.Request, res: express.Response) => {
   try {
-    const { username, password, phone, email, agentCode } = req.body;
+    const { username, password, phone, email, referral_code } = req.body;
 
     if (!username || !password) {
       return res.json({
@@ -242,50 +199,31 @@ router.post('/register', async (req: express.Request, res: express.Response) => 
       });
     }
 
-    // 检查用户名是否已存在
-    if (users.has(username)) {
-      return res.json({
-        code: 400,
-        message: '用户名已存在',
-        data: null,
-        timestamp: Date.now()
-      });
-    }
-
-    // 加密密码
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // 创建用户
-    const newUser = {
-      id: uuidv4(),
+    // 调用认证服务注册
+    const user = await register({
       username,
-      password: hashedPassword,
-      phone: phone || '',
-      email: email || '',
-      agentCode: agentCode || '',
-      role: 'USER',
-      realName: '',
-      createdAt: new Date().toISOString()
-    };
+      password,
+      phone,
+      email,
+      referral_code
+    });
 
-    users.set(username, newUser);
-
-    console.log(`[Auth] 新用户注册: ${username}`);
+    logger.info(`新用户注册: ${username}`);
 
     res.json({
       code: 0,
       message: '注册成功',
       data: {
-        id: newUser.id,
-        username: newUser.username
+        id: user.id,
+        username: user.username
       },
       timestamp: Date.now()
     });
   } catch (error: any) {
-    console.error('[Auth] 注册错误:', error);
-    res.json({
-      code: 500,
-      message: '服务器内部错误',
+    logger.error('[Auth] 注册错误:', error.message);
+    res.status(400).json({
+      code: 400,
+      message: error.message || '注册失败',
       data: null,
       timestamp: Date.now()
     });
@@ -293,7 +231,7 @@ router.post('/register', async (req: express.Request, res: express.Response) => 
 });
 
 // 获取当前用户信息
-router.get('/me', (req: express.Request, res: express.Response) => {
+router.get('/me', async (req: express.Request, res: express.Response) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
 
@@ -306,10 +244,9 @@ router.get('/me', (req: express.Request, res: express.Response) => {
       });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
-    const user = users.get(decoded.username);
+    const payload = await getUserById(parseInt(req.headers['x-user-id'] as string || '0'));
 
-    if (!user) {
+    if (!payload) {
       return res.json({
         code: 404,
         message: '用户不存在',
@@ -321,23 +258,52 @@ router.get('/me', (req: express.Request, res: express.Response) => {
     res.json({
       code: 0,
       message: '获取成功',
+      data: payload,
+      timestamp: Date.now()
+    });
+  } catch (error: any) {
+    logger.error('[Auth] 获取用户信息错误:', error.message);
+    res.json({
+      code: 401,
+      message: 'Token无效或已过期',
+      data: null,
+      timestamp: Date.now()
+    });
+  }
+});
+
+// 刷新Token
+router.post('/refresh', async (req: express.Request, res: express.Response) => {
+  try {
+    const { refresh_token } = req.body;
+
+    if (!refresh_token) {
+      return res.json({
+        code: 400,
+        message: 'Refresh Token不能为空',
+        data: null,
+        timestamp: Date.now()
+      });
+    }
+
+    const result = await refreshToken(refresh_token);
+
+    res.json({
+      code: 0,
+      message: '刷新成功',
       data: {
-        id: user.id,
-        username: user.username,
-        role: user.role,
-        realName: user.realName,
-        phone: user.phone,
-        email: user.email,
-        createdAt: user.createdAt,
-        lastLoginAt: user.lastLoginAt
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+        expires_in: result.expires_in,
+        user: result.user
       },
       timestamp: Date.now()
     });
   } catch (error: any) {
-    console.error('[Auth] 获取用户信息错误:', error);
+    logger.error('[Auth] 刷新Token错误:', error.message);
     res.json({
       code: 401,
-      message: 'Token无效或已过期',
+      message: error.message || 'Token无效或已过期',
       data: null,
       timestamp: Date.now()
     });
@@ -352,43 +318,6 @@ router.post('/logout', (req: express.Request, res: express.Response) => {
     data: null,
     timestamp: Date.now()
   });
-});
-
-// 验证Token
-router.post('/verify', (req: express.Request, res: express.Response) => {
-  try {
-    const { token } = req.body;
-
-    if (!token) {
-      return res.json({
-        code: 400,
-        message: 'Token不能为空',
-        data: null,
-        timestamp: Date.now()
-      });
-    }
-
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
-
-    res.json({
-      code: 0,
-      message: 'Token有效',
-      data: {
-        userId: decoded.userId,
-        username: decoded.username,
-        role: decoded.role,
-        exp: decoded.exp
-      },
-      timestamp: Date.now()
-    });
-  } catch (error: any) {
-    res.json({
-      code: 401,
-      message: 'Token无效或已过期',
-      data: null,
-      timestamp: Date.now()
-    });
-  }
 });
 
 // 发送邮箱验证码
@@ -426,19 +355,19 @@ router.post('/send-code', (req: express.Request, res: express.Response) => {
     });
 
     // 生产环境应该发送实际邮件
-    console.log(`[Auth] 验证码已发送到 ${email}: ${code}`);
+    logger.info(`验证码已发送到 ${email}: ${code}`);
 
     res.json({
       code: 0,
       message: '验证码已发送',
       data: {
         email,
-        expiresIn: 300 // 5分钟，单位：秒
+        expiresIn: 300
       },
       timestamp: Date.now()
     });
-  } catch (error) {
-    console.error('[Auth] 发送验证码失败:', error);
+  } catch (error: any) {
+    logger.error('[Auth] 发送验证码失败:', error.message);
     res.json({
       code: 500,
       message: '发送验证码失败',
@@ -449,7 +378,7 @@ router.post('/send-code', (req: express.Request, res: express.Response) => {
 });
 
 // 重置密码
-router.post('/reset-password', (req: express.Request, res: express.Response) => {
+router.post('/reset-password', async (req: express.Request, res: express.Response) => {
   try {
     const { email, code, newPassword } = req.body;
 
@@ -464,6 +393,99 @@ router.post('/reset-password', (req: express.Request, res: express.Response) => 
 
     // 验证验证码
     const storedCode = verificationCodes.get(email);
+    if (!storedCode) {
+      return res.json({
+        code: 400,
+        message: '验证码已过期或不存在',
+        data: null,
+        timestamp: Date.now()
+      });
+    }
+
+    // 检查验证码是否过期（5分钟）
+    if (Date.now() - storedCode.createdAt > 5 * 60 * 1000) {
+      verificationCodes.delete(email);
+      return res.json({
+        code: 400,
+        message: '验证码已过期',
+        data: null,
+        timestamp: Date.now()
+      });
+    }
+
+    if (storedCode.code !== code) {
+      return res.json({
+        code: 400,
+        message: '验证码错误',
+        data: null,
+        timestamp: Date.now()
+      });
+    }
+
+    // 查找用户
+    const { query } = await import('../config/database');
+    const userResult = await query(
+      'SELECT username FROM users WHERE email = $1',
+      [email]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.json({
+        code: 404,
+        message: '用户不存在',
+        data: null,
+        timestamp: Date.now()
+      });
+    }
+
+    const username = userResult.rows[0].username;
+
+    // 重置密码
+    await resetPassword(username, newPassword);
+
+    // 清除验证码
+    verificationCodes.delete(email);
+
+    logger.info(`密码重置成功: ${username}`);
+
+    res.json({
+      code: 0,
+      message: '密码重置成功',
+      data: null,
+      timestamp: Date.now()
+    });
+  } catch (error: any) {
+    logger.error('[Auth] 重置密码失败:', error.message);
+    res.json({
+      code: 500,
+      message: error.message || '重置密码失败',
+      data: null,
+      timestamp: Date.now()
+    });
+  }
+});
+
+// 生成推荐码
+router.post('/generate-referral', async (req: express.Request, res: express.Response) => {
+  try {
+    const code = generateReferralCode();
+
+    res.json({
+      code: 0,
+      message: '生成成功',
+      data: { code },
+      timestamp: Date.now()
+    });
+  } catch (error: any) {
+    logger.error('[Auth] 生成推荐码失败:', error.message);
+    res.json({
+      code: 500,
+      message: '生成推荐码失败',
+      data: null,
+      timestamp: Date.now()
+    });
+  }
+});
 
     if (!storedCode) {
       return res.json({
@@ -506,53 +528,4 @@ router.post('/reset-password', (req: express.Request, res: express.Response) => 
         data: null,
         timestamp: Date.now()
       });
-    }
-
-    // 更新密码
-    user.password = bcrypt.hashSync(newPassword, 10);
-    users.set(user.username, user);
-
-    // 删除验证码
-    verificationCodes.delete(email);
-
-    console.log(`[Auth] 用户 ${email} 密码重置成功`);
-
-    res.json({
-      code: 0,
-      message: '密码重置成功',
-      data: null,
-      timestamp: Date.now()
-    });
-  } catch (error) {
-    console.error('[Auth] 重置密码失败:', error);
-    res.json({
-      code: 500,
-      message: '重置密码失败',
-      data: null,
-      timestamp: Date.now()
-    });
-  }
-});
-
-// 获取所有用户（已删除 - 安全风险：需要管理员权限认证）
-// router.get('/users', (req: express.Request, res: express.Response) => {
-//   const userList = Array.from(users.values()).map((user: any) => ({
-//     id: user.id,
-//     username: user.username,
-//     role: user.role,
-//     realName: user.realName,
-//     phone: user.phone,
-//     email: user.email,
-//     createdAt: user.createdAt,
-//     lastLoginAt: user.lastLoginAt
-//   }));
-//
-//   res.json({
-//     code: 0,
-//     message: '获取成功',
-//     data: userList,
-//     timestamp: Date.now()
-//   });
-// });
-
 export default router;

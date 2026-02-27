@@ -10,8 +10,13 @@ import { orderLock, marginLock } from '../utils/lock';
 import logger from '../utils/logger';
 import { ErrorCode, createErrorResponse, createSuccessResponse } from '../utils/error-codes';
 
-// JWT密钥
+// JWT密钥 - 必须通过环境变量配置
 const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  logger.error('[API] JWT_SECRET未配置，请在环境变量中设置');
+  throw new Error('JWT_SECRET not configured');
+}
 
 // ============================================
 // API 路由

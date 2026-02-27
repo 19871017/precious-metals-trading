@@ -301,8 +301,8 @@ export async function closePosition(data: ClosePositionData) {
       `SELECT p.*, prod.symbol, prod.tick_value
        FROM positions p
        JOIN products prod ON p.product_id = prod.id
-       WHERE p.id = $1 AND p.user_id = $2 AND p.status = $2`,
-      [data.position_id, data.user_id]
+       WHERE p.id = $1 AND p.user_id = $2 AND p.status = $3`,
+      [data.position_id, data.user_id, PositionStatus.OPEN]
     );
 
     if (!position.rows[0]) {

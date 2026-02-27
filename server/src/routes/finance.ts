@@ -8,8 +8,13 @@ import { getAccount } from '../services/finance.service';
 
 const router = express.Router();
 
-// JWT密钥强度验证（确保与auth.ts一致）
-const JWT_SECRET = process.env.JWT_SECRET || 'precious-metals-trading-secret-key-2024-secure-32chars';
+// JWT密钥 - 必须通过环境变量配置（确保与auth.ts一致）
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET || JWT_SECRET.length < 32) {
+  logger.error('[Finance] JWT_SECRET未配置或长度不足32字符');
+  throw new Error('JWT_SECRET not configured');
+}
 
 /**
  * JWT认证中间件
@@ -78,14 +83,13 @@ router.post('/deposit', authenticateUser, async (req: express.Request, res: expr
 
     // 创建充值记录到数据库
     const result = await query(
-      `INSERT INTO financial_records
-       (record_number, user_id, type, amount, payment_method, bank_account, bank_name, account_name, usdt_address, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
-       RETURNING id, record_number`,
+      `INSERT INTO deposit_orders
+       (order_number, user_id, amount, payment_method, bank_account, bank_name, account_name, usdt_address, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+       RETURNING id, order_number`,
       [
         uuidv4(),
         userId,
-        'deposit',
         parseFloat(amount),
         method,
         bankAccount || null,
@@ -148,16 +152,40 @@ router.post('/withdraw', authenticateUser, async (req: express.Request, res: exp
     }
 
     // 检查每日提现限额
-    const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayWithdraws = await query(
       `SELECT COALESCE(SUM(amount), 0) as total_withdraw
-       FROM financial_records
+       FROM withdraw_orders
        WHERE user_id = $1
-         AND type = 'withdraw'
          AND status != 'rejected'
          AND created_at >= $2`,
       [userId, today]
+    );
+
+    const totalTodayWithdraw = parseFloat(todayWithdraws.rows[0].total_withdraw) || 0;
+    const dailyLimit = 10000; // 每日提现限额10000
+
+    if (totalTodayWithdraw + parseFloat(amount) > dailyLimit) {
+      return res.status(400).json(createErrorResponse(ErrorCode.WITHDRAW_LIMIT_EXCEEDED, `超出每日提现限额，今日已提现${totalTodayWithdraw}，限额${dailyLimit}`));
+    }
+
+    // 创建提现记录到数据库
+    const result = await query(
+      `INSERT INTO withdraw_orders
+       (order_number, user_id, amount, payment_method, bank_account, bank_name, account_name, usdt_address, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+       RETURNING id, order_number`,
+      [
+        uuidv4(),
+        userId,
+        parseFloat(amount),
+        method,
+        bankAccount || null,
+        bankName || null,
+        accountName || null,
+        usdtAddress || null,
+        'pending',
+      ]
     );
 
     const totalTodayWithdraw = parseFloat(todayWithdraws.rows[0].total_withdraw) || 0;
@@ -213,24 +241,21 @@ router.get('/records', authenticateUser, async (req: express.Request, res: expre
   try {
     const { userId, type, status, page = 1, pageSize = 20 } = req.query;
 
-    let whereClause = 'WHERE 1=1';
+    let depositWhereClause = 'WHERE 1=1';
+    let withdrawWhereClause = 'WHERE 1=1';
     const params: any[] = [];
     let paramIndex = 1;
 
     if (userId) {
-      whereClause += ` AND user_id = $${paramIndex}`;
+      depositWhereClause += ` AND user_id = $${paramIndex}`;
+      withdrawWhereClause += ` AND user_id = $${paramIndex}`;
       params.push(userId);
       paramIndex++;
     }
 
-    if (type) {
-      whereClause += ` AND type = $${paramIndex}`;
-      params.push(type);
-      paramIndex++;
-    }
-
     if (status) {
-      whereClause += ` AND status = $${paramIndex}`;
+      depositWhereClause += ` AND status = $${paramIndex}`;
+      withdrawWhereClause += ` AND status = $${paramIndex}`;
       params.push(status);
       paramIndex++;
     }
@@ -239,22 +264,34 @@ router.get('/records', authenticateUser, async (req: express.Request, res: expre
     const pageSizeNum = parseInt(pageSize as string);
     const offset = (pageNum - 1) * pageSizeNum;
 
-    // 获取总数
-    const countResult = await query(
-      `SELECT COUNT(*) as total FROM financial_records ${whereClause}`,
-      params
-    );
+    // 只获取指定类型
+    let allRecords: any[] = [];
 
-    const total = parseInt(countResult.rows[0].total);
+    if (type === 'deposit' || !type) {
+      const depositResult = await query(
+        `SELECT *, 'deposit' as record_type FROM deposit_orders ${depositWhereClause} ORDER BY created_at DESC`,
+        params.slice(0, paramIndex - 1)
+      );
+      allRecords = allRecords.concat(depositResult.rows);
+    }
 
-    // 获取数据
-    const dataResult = await query(
-      `SELECT * FROM financial_records ${whereClause} ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
-      [...params, pageSizeNum, offset]
-    );
+    if (type === 'withdraw' || !type) {
+      const withdrawResult = await query(
+        `SELECT *, 'withdraw' as record_type FROM withdraw_orders ${withdrawWhereClause} ORDER BY created_at DESC`,
+        params.slice(0, paramIndex - 1)
+      );
+      allRecords = allRecords.concat(withdrawResult.rows);
+    }
+
+    // 按时间倒序排序
+    allRecords.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    // 分页
+    const total = allRecords.length;
+    const paginatedRecords = allRecords.slice(offset, offset + pageSizeNum);
 
     res.json(createSuccessResponse({
-      list: dataResult.rows,
+      list: paginatedRecords,
       total,
       page: pageNum,
       pageSize: pageSizeNum,

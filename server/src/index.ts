@@ -5,6 +5,8 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
+import logger from './utils/logger';
+import { ErrorCode, createErrorResponse } from './utils/error-codes';
 
 import { PositionManager, OrderManager } from './core/OrderManager';
 import { RiskManager } from './core/RiskManager';
@@ -15,6 +17,7 @@ import { createShuhaiRouter } from './routes/shuhai';
 import authRouter from './routes/auth';
 import adminRouter from './routes/admin';
 import aiRouter from './routes/ai';
+import portfolioRouter from './routes/portfolio';
 
 dotenv.config();
 
@@ -41,18 +44,50 @@ app.use(cors({
   credentials: true
 }));
 
-// 限流 - 临时禁用用于测试
-// const limiter = rateLimit({
-//   windowMs: 15 * 60 * 1000, // 15分钟
-//   max: 10000, // 每个IP最多10000个请求
-//   message: {
-//     code: 429,
-//     message: '请求过于频繁，请稍后再试',
-//     data: null,
-//     timestamp: Date.now()
-//   }
-// });
-// app.use(limiter);
+// 限流配置
+const createLimiter = (windowMs: number, max: number, message: string) => rateLimit({
+  windowMs,
+  max,
+  message: {
+    code: 429,
+    message,
+    data: null,
+    timestamp: Date.now()
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// 登录接口限流: 5次/15分钟
+const loginLimiter = createLimiter(
+  15 * 60 * 1000,
+  5,
+  '登录请求过于频繁,请15分钟后再试'
+);
+
+// 认证接口限流: 10次/分钟
+const authLimiter = createLimiter(
+  60 * 1000,
+  10,
+  '认证请求过于频繁,请稍后再试'
+);
+
+// 交易接口限流: 20次/分钟
+const tradingLimiter = createLimiter(
+  60 * 1000,
+  20,
+  '交易请求过于频繁,请稍后再试'
+);
+
+// API通用限流: 100次/分钟
+const apiLimiter = createLimiter(
+  60 * 1000,
+  100,
+  '请求过于频繁,请稍后再试'
+);
+
+// 应用全局限流
+app.use(apiLimiter);
 
 // 解析JSON
 app.use(express.json());
@@ -155,30 +190,61 @@ app.get('/health', (req, res) => {
   });
 });
 
-// 认证路由
-app.use('/auth', authRouter);
+// 认证路由(应用登录限流)
+app.use('/auth/login', loginLimiter);
+app.use('/auth', authLimiter, authRouter);
 
 // 管理员路由
 app.use('/admin', adminRouter);
 
 // AI分析路由
-app.use('/ai', aiRouter);
+app.use('/ai', apiLimiter, aiRouter);
 
-// API 路由
-app.use('/api', createApiRouter(orderManager, positionManager, riskManager, marketService));
+// 投资组合路由
+app.use('/portfolio', apiLimiter, portfolioRouter);
+
+// API路由(交易接口应用限流)
+app.use('/api/order', tradingLimiter);
+app.use('/api/position', tradingLimiter);
+app.use('/api', apiLimiter, createApiRouter(orderManager, positionManager, riskManager, marketService));
 
 // 数海行情代理路由
 app.use('/shuhai', createShuhaiRouter());
 
-// 错误处理
+// 错误处理中间件
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('服务器错误:', err);
-  res.status(500).json({
-    code: 500,
-    message: '服务器内部错误',
-    data: null,
-    timestamp: Date.now()
+  logger.error('全局错误处理:', {
+    error: err.message,
+    stack: err.stack,
+    url: req.url,
+    method: req.method,
+    ip: req.ip
   });
+
+  // 处理已知错误
+  if (err.code && Object.values(ErrorCode).includes(err.code)) {
+    return res.status(err.statusCode || 400).json(createErrorResponse(err.code, err.message));
+  }
+
+  // 处理JWT错误
+  if (err.name === 'JsonWebTokenError') {
+    return res.status(401).json(createErrorResponse(ErrorCode.TOKEN_INVALID));
+  }
+
+  if (err.name === 'TokenExpiredError') {
+    return res.status(401).json(createErrorResponse(ErrorCode.TOKEN_EXPIRED));
+  }
+
+  // 处理其他错误
+  const statusCode = err.statusCode || 500;
+  const errorCode = statusCode >= 500 ? ErrorCode.INTERNAL_ERROR : ErrorCode.INVALID_PARAM;
+
+  res.status(statusCode).json(createErrorResponse(errorCode, process.env.NODE_ENV === 'production' ? '系统内部错误' : err.message));
+});
+
+// 404处理
+app.use((req: express.Request, res: express.Response) => {
+  res.status(404).json(createErrorResponse(ErrorCode.RESOURCE_NOT_FOUND, '接口不存在'));
 });
 
 // ============================================
