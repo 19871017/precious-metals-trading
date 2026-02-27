@@ -126,6 +126,68 @@ class SocketService {
   }
 
   /**
+   * 订阅订单状态更新
+   */
+  subscribeOrders(userId: string, callback: (data: any) => void): void {
+    if (!this.socket || !this.socket.connected) {
+      console.warn('[WebSocket] Not connected, cannot subscribe to orders');
+      return;
+    }
+
+    this.socket.emit('subscribe:orders', userId);
+    this.socket.on(`orders:${userId}`, callback);
+    this.socket.on('order:update', callback);
+    this.socket.on('order:filled', callback);
+    this.socket.on('order:cancelled', callback);
+    this.socket.on('order:rejected', callback);
+
+    console.log('[WebSocket] Subscribed to orders:', userId);
+  }
+
+  /**
+   * 取消订阅订单状态更新
+   */
+  unsubscribeOrders(userId: string): void {
+    if (!this.socket) return;
+
+    this.socket.off(`orders:${userId}`);
+    this.socket.off('order:update');
+    this.socket.off('order:filled');
+    this.socket.off('order:cancelled');
+    this.socket.off('order:rejected');
+
+    console.log('[WebSocket] Unsubscribed from orders:', userId);
+  }
+
+  /**
+   * 订阅系统通知
+   */
+  subscribeNotifications(userId: string, callback: (data: any) => void): void {
+    if (!this.socket || !this.socket.connected) {
+      console.warn('[WebSocket] Not connected, cannot subscribe to notifications');
+      return;
+    }
+
+    this.socket.emit('subscribe:notifications', userId);
+    this.socket.on(`notifications:${userId}`, callback);
+    this.socket.on('notification', callback);
+
+    console.log('[WebSocket] Subscribed to notifications:', userId);
+  }
+
+  /**
+   * 取消订阅系统通知
+   */
+  unsubscribeNotifications(userId: string): void {
+    if (!this.socket) return;
+
+    this.socket.off(`notifications:${userId}`);
+    this.socket.off('notification');
+
+    console.log('[WebSocket] Unsubscribed from notifications:', userId);
+  }
+
+  /**
    * 检查连接状态
    */
   isConnected(): boolean {

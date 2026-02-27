@@ -10,7 +10,8 @@ import {
   DatePicker,
   Dialog,
   Descriptions,
-  Message
+  Message,
+  Tabs
 } from 'tdesign-react';
 import {
   SearchIcon,
@@ -21,6 +22,7 @@ import {
   ChartIcon
 } from 'tdesign-icons-react';
 import axios from 'axios';
+import CustomerStatistics from '../../components/agent/CustomerStatistics';
 
 interface Customer {
   id: number;
@@ -51,6 +53,7 @@ export default function AgentCustomers() {
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [statistics, setStatistics] = useState<Statistics | null>(null);
+  const [activeTab, setActiveTab] = useState<'list' | 'statistics'>('list');
 
   // 搜索条件
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -223,36 +226,43 @@ export default function AgentCustomers() {
   ];
 
   return (
-    <div>
-      {/* 统计卡片 */}
-      {statistics && (
-        <Card bordered={false} style={{ marginBottom: '16px' }}>
-          <Space size="large">
-            <div>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#0052d9' }}>
-                {statistics.totalCustomers}
-              </div>
-              <div style={{ fontSize: '12px', color: '#666' }}>总客户数</div>
-            </div>
-            <div>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#22c55e' }}>
-                {statistics.todayNewCustomers}
-              </div>
-              <div style={{ fontSize: '12px', color: '#666' }}>今日新增</div>
-            </div>
-            <div>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#fbbf24' }}>
-                ¥{statistics.totalBalance.toFixed(2)}
-              </div>
-              <div style={{ fontSize: '12px', color: '#666' }}>总余额</div>
-            </div>
-            <div>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#f97316' }}>
-                ¥{(statistics.totalVolume || 0).toLocaleString()}
-              </div>
-              <div style={{ fontSize: '12px', color: '#666' }}>总交易量</div>
-            </div>
-          </Space>
+    <div className="p-4">
+      <Tabs
+        activeValue={activeTab}
+        onChange={setActiveTab}
+        theme="card"
+        size="large"
+      >
+        <Tabs.TabPanel value="list" label="客户列表">
+          {/* 统计卡片 */}
+          {statistics && (
+            <Card bordered={false} style={{ marginBottom: '16px' }}>
+              <Space size="large">
+                <div>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#0052d9' }}>
+                    {statistics.totalCustomers}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#666' }}>总客户数</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#22c55e' }}>
+                    {statistics.todayNewCustomers}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#666' }}>今日新增</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#fbbf24' }}>
+                    ¥{statistics.totalBalance.toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#666' }}>总余额</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#f97316' }}>
+                    ¥{(statistics.totalVolume || 0).toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#666' }}>总交易量</div>
+                </div>
+              </Space>
         </Card>
       )}
 
@@ -366,6 +376,11 @@ export default function AgentCustomers() {
           </Descriptions>
         )}
       </Dialog>
+        </Tabs.TabPanel>
+        <Tabs.TabPanel value="statistics" label="统计报表">
+          <CustomerStatistics />
+        </Tabs.TabPanel>
+      </Tabs>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Card, Badge, Input, Dialog, MessagePlugin } from 'tdesign-react';
-import { SettingIcon, ArrowUpIcon, ArrowDownIcon, ChevronDownIcon, CalendarIcon, ChartIcon, WalletIcon, TrendingUpIcon, CloseIcon, InfoCircleIcon } from 'tdesign-icons-react';
+import { Card, Badge, Input, Dialog, MessagePlugin, Drawer } from 'tdesign-react';
+import { SettingIcon, ArrowUpIcon, ArrowDownIcon, ChevronDownIcon, CalendarIcon, ChartIcon, WalletIcon, TrendingUpIcon, CloseIcon, InfoCircleIcon, ListIcon, NotificationIcon } from 'tdesign-icons-react';
 import TechRefreshIcon from '../components/TechRefreshIcon';
 import ReactECharts from 'echarts-for-react';
 import { getQuoteBySymbol, getKlineBySymbol } from '../services/shuhai-backend.service';
@@ -11,6 +11,10 @@ import { mockOrders } from '../data/mockData';
 import { formatPrice, formatCurrency } from '../utils/format';
 import { Position as PositionType, Order } from '../types';
 import { generateSymbolStrategy, SymbolStrategy } from '../services/ai-analysis.service';
+import OrderManagement from '../components/OrderManagement';
+import OrderHistory from '../components/OrderHistory';
+import NotificationDrawer from '../components/NotificationDrawer';
+import { useOrderUpdates, usePositionUpdates } from '../hooks/useOrderUpdates';
 
 // 格式化函数
 const formatPercent = (value: number): string => {
@@ -98,7 +102,13 @@ export default function Market() {
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
+  const [showOrderManagement, setShowOrderManagement] = useState(false);
+  const [showNotificationDrawer, setShowNotificationDrawer] = useState(false);
   const [aiStrategy, setAiStrategy] = useState<SymbolStrategy | null>(null);
+  const [userId] = useState('demo-user');
+
+  const orderUpdateConnected = useOrderUpdates(userId, orders, setOrders);
+  const positionUpdateConnected = usePositionUpdates(userId, positions, setPositions);
 
   // 我的持仓数据 - 从 localStorage 加载
   const [positions, setPositions] = useState<PositionType[]>(() => {
@@ -1091,22 +1101,30 @@ export default function Market() {
             />
           </div>
           <div className="flex items-center gap-1">
-            {/* 连接状态指示器 */}
-            <div
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${
-                isConnected ? 'bg-green-900/30' : 'bg-red-900/30'
-              }`}
-            >
+            {/* 连接状态 + 通知 */}
+            <div className="flex items-center gap-2">
               <div
-                className={`w-2.5 h-2.5 rounded-full ${
-                  isConnected
-                    ? 'bg-green-500 animate-pulse'
-                    : 'bg-red-500 animate-pulse'
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${
+                  isConnected ? 'bg-green-900/30' : 'bg-red-900/30'
                 }`}
-              />
-              <span className={`text-xs ${isConnected ? 'text-green-500' : 'text-red-500'}`}>
-                {isConnected ? '已联网' : '未联网'}
-              </span>
+              >
+                <div
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    isConnected
+                      ? 'bg-green-500 animate-pulse'
+                      : 'bg-red-500 animate-pulse'
+                  }`}
+                />
+                <span className={`text-xs ${isConnected ? 'text-green-500' : 'text-red-500'}`}>
+                  {isConnected ? '已联网' : '未联网'}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowNotificationDrawer(true)}
+                className="p-2 rounded-lg hover:bg-neutral-800 transition-colors relative"
+              >
+                <NotificationIcon size="18px" className="text-neutral-400 hover:text-neutral-300" />
+              </button>
             </div>
             <button
               onClick={handleRefresh}
@@ -1465,6 +1483,13 @@ export default function Market() {
                     {orders.filter(o => o.status === 'pending').length}
                   </span>
                 )}
+              </button>
+              <button
+                onClick={() => setShowOrderManagement(true)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-neutral-950 hover:bg-neutral-800 text-neutral-400 hover:text-neutral-300 transition-colors"
+              >
+                <ListIcon size="14px" />
+                <span className="text-sm">订单管理</span>
               </button>
               <button
                 onClick={() => navigate('/analysis')}
@@ -2193,7 +2218,7 @@ export default function Market() {
                 <div className="flex-1">
                   <p className="text-xs text-yellow-400 font-medium mb-1">订单取消后无法恢复</p>
                   <p className="text-xs text-neutral-400 leading-relaxed">
-                    确认要取消此订单吗？取消后订单将立即失效，保证金将返还到可用资金。
+                    确认要取消此订单吗？取消后订单将立即失效,保证金将返还到可用资金。
                   </p>
                 </div>
               </div>
@@ -2201,6 +2226,19 @@ export default function Market() {
           </div>
         )}
       </Dialog>
+
+      <OrderManagement
+        visible={showOrderManagement}
+        onClose={() => setShowOrderManagement(false)}
+        orders={orders}
+        onCancelOrder={handleCancelOrder}
+      />
+
+      <NotificationDrawer
+        visible={showNotificationDrawer}
+        onClose={() => setShowNotificationDrawer(false)}
+        userId={userId}
+      />
     </div>
   );
 }

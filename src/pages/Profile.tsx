@@ -18,6 +18,9 @@ import FunctionGrid from '../components/profile/FunctionGrid';
 import QuickNav, { defaultNavItems } from '../components/profile/QuickNav';
 import EditProfileDialog from '../components/profile/EditProfileDialog';
 import ChangePasswordDialog from '../components/profile/ChangePasswordDialog';
+import ChangePhoneDialog from '../components/profile/ChangePhoneDialog';
+import BindEmailDialog from '../components/profile/BindEmailDialog';
+import RealNameAuthDialog from '../components/profile/RealNameAuthDialog';
 import NoticeDetailDialog from '../components/profile/NoticeDetailDialog';
 import logger from '../utils/logger';
 
@@ -73,47 +76,36 @@ const accountFunctions = [
 ];
 
 // 安全设置项目
-const securityItems = [
-  {
-    icon: <LockOnIcon size="24px" />,
-    title: '登录密码',
-    description: '定期修改密码，保障账户安全',
-    status: '已设置',
-    onClick: () => {
-      /* 由 Dialog 组件处理 */
+  const securityItems = [
+    {
+      icon: <LockOnIcon size="24px" />,
+      title: '登录密码',
+      description: '定期修改密码，保障账户安全',
+      status: '已设置',
+      onClick: () => setChangePasswordVisible(true)
+    },
+    {
+      icon: <CallIcon size="24px" />,
+      title: '手机验证',
+      description: `已绑定 ${currentPhone}`,
+      status: '已绑定',
+      onClick: () => setChangePhoneVisible(true)
+    },
+    {
+      icon: <MailIcon size="24px" />,
+      title: '邮箱验证',
+      description: currentEmail || '未绑定',
+      status: currentEmail ? '已绑定' : '未绑定',
+      onClick: () => setBindEmailVisible(true)
+    },
+    {
+      icon: <CheckIcon size="24px" />,
+      title: '实名认证',
+      description: authInfo ? `${authInfo.name}，已认证` : '未认证',
+      status: authInfo ? '已认证' : '未认证',
+      onClick: () => setRealNameAuthVisible(true)
     }
-  },
-  {
-    icon: <CallIcon size="24px" />,
-    title: '手机验证',
-    description: '已绑定 138****8888',
-    status: '已绑定',
-    onClick: () => {
-      /* TODO: 实现手机号修改功能 */
-      MessagePlugin.info('手机号修改功能开发中');
-    }
-  },
-  {
-    icon: <MailIcon size="24px" />,
-    title: '邮箱验证',
-    description: '未绑定',
-    status: '未绑定',
-    onClick: () => {
-      /* TODO: 实现邮箱绑定功能 */
-      MessagePlugin.info('邮箱绑定功能开发中');
-    }
-  },
-  {
-    icon: <CheckIcon size="24px" />,
-    title: '实名认证',
-    description: '张三，身份证认证完成',
-    status: '已认证',
-    onClick: () => {
-      /* TODO: 实现实名认证流程 */
-      MessagePlugin.info('实名认证已完成');
-    }
-  }
-];
+  ];
 
 // 系统公告
 const systemNotices = [
@@ -149,8 +141,14 @@ export default function Profile() {
   const [logoutDialogVisible, setLogoutDialogVisible] = useState(false);
   const [editProfileVisible, setEditProfileVisible] = useState(false);
   const [changePasswordVisible, setChangePasswordVisible] = useState(false);
+  const [changePhoneVisible, setChangePhoneVisible] = useState(false);
+  const [bindEmailVisible, setBindEmailVisible] = useState(false);
+  const [realNameAuthVisible, setRealNameAuthVisible] = useState(false);
   const [noticeDetailVisible, setNoticeDetailVisible] = useState(false);
   const [selectedNotice, setSelectedNotice] = useState<any>(null);
+  const [currentPhone, setCurrentPhone] = useState(userData.phone);
+  const [currentEmail, setCurrentEmail] = useState<string | null>(null);
+  const [authInfo, setAuthInfo] = useState<{ name: string; idCard: string; verified: boolean } | null>(userData.isVerified ? { name: '张三', idCard: '110101199001011234', verified: true } : null);
 
   const handleLogout = () => {
     window.location.href = '/';
@@ -410,6 +408,30 @@ export default function Profile() {
         visible={changePasswordVisible}
         onClose={() => setChangePasswordVisible(false)}
         onSave={handlePasswordChange}
+      />
+
+      {/* 修改手机号弹窗 */}
+      <ChangePhoneDialog
+        visible={changePhoneVisible}
+        onClose={() => setChangePhoneVisible(false)}
+        currentPhone={currentPhone}
+        onSuccess={(newPhone) => setCurrentPhone(newPhone)}
+      />
+
+      {/* 绑定邮箱弹窗 */}
+      <BindEmailDialog
+        visible={bindEmailVisible}
+        onClose={() => setBindEmailVisible(false)}
+        currentEmail={currentEmail}
+        onSuccess={(email) => setCurrentEmail(email)}
+      />
+
+      {/* 实名认证弹窗 */}
+      <RealNameAuthDialog
+        visible={realNameAuthVisible}
+        onClose={() => setRealNameAuthVisible(false)}
+        currentAuth={authInfo}
+        onSuccess={(data) => setAuthInfo({ ...data, verified: true })}
       />
 
       {/* 公告详情弹窗 */}
