@@ -9,14 +9,11 @@ import { Calculator } from '../utils/calculator';
 import { orderLock, marginLock } from '../utils/lock';
 import logger from '../utils/logger';
 import { ErrorCode, createErrorResponse, createSuccessResponse } from '../utils/error-codes';
+import { getJWTSecret } from '../config/app.config';
+import { validateCSRF } from '../middleware/csrf';
 
 // JWT密钥 - 必须通过环境变量配置
-const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!JWT_SECRET) {
-  logger.error('[API] JWT_SECRET未配置，请在环境变量中设置');
-  throw new Error('JWT_SECRET not configured');
-}
+const JWT_SECRET = getJWTSecret();
 
 // ============================================
 // API 路由
@@ -219,7 +216,7 @@ export function createApiRouter(
   // ============================================
 
   // POST /api/order/create - 创建订单
-  router.post('/order/create', authenticateUser, async (req: any, res: any) => {
+  router.post('/order/create', authenticateUser, validateCSRF, async (req: any, res: any) => {
     const userId = req.userId;
     const {
       productCode,
@@ -361,7 +358,7 @@ export function createApiRouter(
   });
 
   // POST /api/order/cancel - 取消订单（使用锁防止并发超额释放保证金）
-  router.post('/order/cancel', authenticateUser, async (req: any, res: any) => {
+  router.post('/order/cancel', authenticateUser, validateCSRF, async (req: any, res: any) => {
     const { orderId } = req.body;
 
     if (!orderId) {
@@ -497,7 +494,7 @@ export function createApiRouter(
   });
 
   // POST /api/position/close - 平仓
-  router.post('/position/close', authenticateUser, (req: any, res: any) => {
+  router.post('/position/close', authenticateUser, validateCSRF, (req: any, res: any) => {
     const userId = req.userId;
     const { positionId } = req.body;
 
@@ -538,7 +535,7 @@ export function createApiRouter(
   });
 
   // POST /api/position/update-sl-tp - 修改止盈止损
-  router.post('/position/update-sl-tp', authenticateUser, (req: any, res: any) => {
+  router.post('/position/update-sl-tp', authenticateUser, validateCSRF, (req: any, res: any) => {
     const userId = req.userId;
     const { positionId, stopLoss, takeProfit }: UpdateSlTpRequest = req.body;
 

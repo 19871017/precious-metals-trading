@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
 import redis from '../utils/redis';
 import { getJWTSecret, SECURITY_CONFIG } from '../config/app.config';
+import { validateCSRF } from '../middleware/csrf';
 import {
   register,
   login,
@@ -22,6 +23,9 @@ const VERIFY_CODE_LIMIT = SECURITY_CONFIG.VERIFY_CODE_LIMIT;
 const VERIFY_CODE_WINDOW = SECURITY_CONFIG.VERIFY_CODE_WINDOW;
 const VERIFICATION_CODE_EXPIRE = SECURITY_CONFIG.VERIFY_CODE_EXPIRE;
 
+// 验证码请求次数记录
+const verifyCodeAttempts = new Map<string, { count: number; firstAttempt: number }>();
+
 // 检查IP是否被锁定
 function isIpLocked(ip: string): boolean {
   const attempt = loginAttempts.get(ip);
@@ -32,7 +36,7 @@ function isIpLocked(ip: string): boolean {
     return true;
   }
 
-  // 超过15分钟，重置计数
+  // 超过15分钟,重置计数
   if (Date.now() - attempt.lastAttempt > 15 * 60 * 1000) {
     loginAttempts.delete(ip);
     return false;
@@ -51,7 +55,7 @@ function recordFailedAttempt(ip: string) {
   // 失败3次锁定15分钟
   if (attempt.count >= 3) {
     attempt.lockedUntil = Date.now() + 15 * 60 * 1000;
-    console.log(`[Auth] IP ${ip} 已被锁定15分钟`);
+    logger.warn(`[Auth] IP ${ip} 已被锁定15分钟`);
   }
 
   loginAttempts.set(ip, attempt);
@@ -68,7 +72,7 @@ function clearLoginAttempts(ip: string) {
 }
 
 // 用户登录
-router.post('/login', async (req: express.Request, res: express.Response) => {
+router.post('/login', validateCSRF, async (req: express.Request, res: express.Response) => {
   try {
     const { username, password } = req.body;
 
@@ -158,7 +162,7 @@ router.post('/login', async (req: express.Request, res: express.Response) => {
 });
 
 // 用户注册
-router.post('/register', async (req: express.Request, res: express.Response) => {
+router.post('/register', validateCSRF, async (req: express.Request, res: express.Response) => {
   try {
     const { username, password, phone, email, referral_code } = req.body;
 
@@ -180,10 +184,10 @@ router.post('/register', async (req: express.Request, res: express.Response) => 
       });
     }
 
-    if (password.length < 6) {
+    if (password.length < SECURITY_CONFIG.MIN_PASSWORD_LENGTH) {
       return res.json({
         code: 400,
-        message: '密码至少6个字符',
+        message: `密码至少${SECURITY_CONFIG.MIN_PASSWORD_LENGTH}个字符`,
         data: null,
         timestamp: Date.now()
       });
@@ -226,7 +230,7 @@ router.get('/me', async (req: express.Request, res: express.Response) => {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
+      return res.json({
         code: 401,
         message: '未授权',
         data: null,
@@ -379,7 +383,7 @@ router.post('/send-code', async (req: express.Request, res: express.Response) =>
     // 生成8位验证码(数字+字母)
     const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     let code = '';
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < SECURITY_CONFIG.VERIFY_CODE_LENGTH; i++) {
       code += chars.charAt(Math.floor(Math.random() * chars.length));
     }
 
@@ -389,9 +393,6 @@ router.post('/send-code', async (req: express.Request, res: express.Response) =>
       await redis.set(key, code, 'EX', VERIFICATION_CODE_EXPIRE);
     } catch (redisError) {
       logger.error('[Auth] Redis存储验证码失败:', redisError);
-      // Redis失败时降级到内存存储
-      const verificationCodes = new Map<string, { code: string; createdAt: number }>();
-      verificationCodes.set(email, { code, createdAt: now });
     }
 
     // 生产环境应该发送实际邮件
@@ -416,53 +417,9 @@ router.post('/send-code', async (req: express.Request, res: express.Response) =>
     });
   }
 });
-    }
-
-    // 验证邮箱格式
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.json({
-        code: 400,
-        message: '邮箱格式不正确',
-        data: null,
-        timestamp: Date.now()
-      });
-    }
-
-    // 生成6位验证码
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-
-    // 存储验证码（5分钟有效期）
-    verificationCodes.set(email, {
-      code,
-      createdAt: Date.now()
-    });
-
-    // 生产环境应该发送实际邮件
-    logger.info(`验证码已发送到 ${email}: ${code}`);
-
-    res.json({
-      code: 0,
-      message: '验证码已发送',
-      data: {
-        email,
-        expiresIn: 300
-      },
-      timestamp: Date.now()
-    });
-  } catch (error: any) {
-    logger.error('[Auth] 发送验证码失败:', error.message);
-    res.json({
-      code: 500,
-      message: '发送验证码失败',
-      data: null,
-      timestamp: Date.now()
-    });
-  }
-});
 
 // 重置密码
-router.post('/reset-password', async (req: express.Request, res: express.Response) => {
+router.post('/reset-password', validateCSRF, async (req: express.Request, res: express.Response) => {
   try {
     const { email, code, newPassword } = req.body;
 
@@ -493,17 +450,6 @@ router.post('/reset-password', async (req: express.Request, res: express.Respons
       storedCode = await redis.get(key);
     } catch (redisError) {
       logger.error('[Auth] Redis获取验证码失败:', redisError);
-      // Redis失败时降级到内存存储
-      const verificationCodes = new Map<string, { code: string; createdAt: number }>();
-      const stored = verificationCodes.get(email);
-      if (stored) {
-        // 检查是否过期
-        if (Date.now() - stored.createdAt > VERIFICATION_CODE_EXPIRE * 1000) {
-          verificationCodes.delete(email);
-        } else {
-          storedCode = stored.code;
-        }
-      }
     }
 
     if (!storedCode) {
@@ -574,6 +520,12 @@ router.post('/reset-password', async (req: express.Request, res: express.Respons
   }
 });
 
+// 获取CSRF Token
+router.get('/csrf-token', (req: express.Request, res: express.Response) => {
+  const { getCSRFToken } = require('../middleware/csrf');
+  getCSRFToken(req, res);
+});
+
 // 生成推荐码
 router.post('/generate-referral', async (req: express.Request, res: express.Response) => {
   try {
@@ -596,45 +548,4 @@ router.post('/generate-referral', async (req: express.Request, res: express.Resp
   }
 });
 
-    if (!storedCode) {
-      return res.json({
-        code: 400,
-        message: '验证码已过期或不存在',
-        data: null,
-        timestamp: Date.now()
-      });
-    }
-
-    // 检查验证码是否过期（5分钟）
-    const codeAge = Date.now() - storedCode.createdAt;
-    if (codeAge > 5 * 60 * 1000) {
-      verificationCodes.delete(email);
-      return res.json({
-        code: 400,
-        message: '验证码已过期',
-        data: null,
-        timestamp: Date.now()
-      });
-    }
-
-    // 验证验证码是否正确
-    if (storedCode.code !== code) {
-      return res.json({
-        code: 400,
-        message: '验证码不正确',
-        data: null,
-        timestamp: Date.now()
-      });
-    }
-
-    // 查找用户
-    const user = Array.from(users.values()).find((u: any) => u.email === email);
-
-    if (!user) {
-      return res.json({
-        code: 404,
-        message: '用户不存在',
-        data: null,
-        timestamp: Date.now()
-      });
 export default router;

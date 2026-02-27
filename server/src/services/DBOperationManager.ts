@@ -563,25 +563,35 @@ export class DBOperationManager {
   }
 
   /**
-   * 更新持仓盈亏
+   * 更新持仓盈亏 - 优化版本(批量查询)
    */
   async updatePositionPnL(userId: number): Promise<void> {
     try {
       // 获取所有持仓
       const positions = await this.getUserPositions(userId);
 
+      if (positions.length === 0) return;
+
+      // 批量获取所有产品的最新价格
+      const productIds = positions.map(p => p.productId);
+      const marketDataResult = await query(
+        'SELECT product_id, last_price FROM market_rates WHERE product_id = ANY($1)',
+        [productIds]
+      );
+
+      // 创建价格Map
+      const priceMap = new Map<number, number>();
+      marketDataResult.rows.forEach(row => {
+        priceMap.set(row.product_id, parseFloat(row.last_price));
+      });
+
+      // 批量更新持仓盈亏
       for (const position of positions) {
         if (position.status !== 1) continue;
 
-        // 获取当前价格
-        const marketData = await query(
-          'SELECT last_price FROM market_rates WHERE product_id = $1',
-          [position.productId]
-        );
+        const currentPrice = priceMap.get(position.productId);
 
-        if (marketData.rows.length === 0) continue;
-
-        const currentPrice = parseFloat(marketData.rows[0].last_price);
+        if (!currentPrice) continue;
 
         // 计算浮动盈亏
         let floatingPl: number;
