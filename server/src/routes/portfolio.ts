@@ -1,6 +1,7 @@
 import express from 'express';
 import logger from '../utils/logger';
 import { ErrorCode, createErrorResponse, createSuccessResponse } from '../utils/error-codes';
+import { authenticateUser } from '../middleware/auth';
 import {
   getPortfolio,
   getRiskExposure,
@@ -11,47 +12,11 @@ import {
 const router = express.Router();
 
 /**
- * JWT认证中间件
- */
-const authenticateUser = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json(createErrorResponse(ErrorCode.TOKEN_MISSING));
-    }
-
-    const token = authHeader.substring(7);
-
-    try {
-      const jwt = require('jsonwebtoken');
-      const JWT_SECRET = process.env.JWT_SECRET;
-
-      if (!JWT_SECRET) {
-        throw new Error('JWT_SECRET未配置');
-      }
-
-      const decoded = jwt.verify(token, JWT_SECRET);
-      req.user = decoded;
-      next();
-    } catch (jwtError) {
-      const isExpired = (jwtError as any).name === 'TokenExpiredError';
-      return res.status(401).json(
-        createErrorResponse(isExpired ? ErrorCode.TOKEN_EXPIRED : ErrorCode.TOKEN_INVALID)
-      );
-    }
-  } catch (error) {
-    logger.error('[Portfolio] 认证中间件错误:', error);
-    return res.status(500).json(createErrorResponse(ErrorCode.INTERNAL_ERROR, '认证失败'));
-  }
-};
-
-/**
  * 获取投资组合
  */
 router.get('/portfolio', authenticateUser, async (req: express.Request, res: express.Response) => {
   try {
-    const userId = req.user?.user_id || req.user?.userId;
+    const userId = req.userId;
 
     if (!userId) {
       return res.status(400).json(createErrorResponse(ErrorCode.MISSING_PARAM, '用户ID不存在'));
@@ -71,7 +36,7 @@ router.get('/portfolio', authenticateUser, async (req: express.Request, res: exp
  */
 router.get('/portfolio/risk-exposure', authenticateUser, async (req: express.Request, res: express.Response) => {
   try {
-    const userId = req.user?.user_id || req.user?.userId;
+    const userId = req.userId;
 
     if (!userId) {
       return res.status(400).json(createErrorResponse(ErrorCode.MISSING_PARAM, '用户ID不存在'));
@@ -91,7 +56,7 @@ router.get('/portfolio/risk-exposure', authenticateUser, async (req: express.Req
  */
 router.get('/portfolio/performance', authenticateUser, async (req: express.Request, res: express.Response) => {
   try {
-    const userId = req.user?.user_id || req.user?.userId;
+    const userId = req.userId;
     const { days = 30 } = req.query;
 
     if (!userId) {
@@ -112,7 +77,7 @@ router.get('/portfolio/performance', authenticateUser, async (req: express.Reque
  */
 router.get('/portfolio/analysis', authenticateUser, async (req: express.Request, res: express.Response) => {
   try {
-    const userId = req.user?.user_id || req.user?.userId;
+    const userId = req.userId;
     const { days = 30 } = req.query;
 
     if (!userId) {

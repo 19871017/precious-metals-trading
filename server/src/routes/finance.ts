@@ -1,56 +1,13 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import jwt from 'jsonwebtoken';
 import logger from '../utils/logger';
 import { ErrorCode, createErrorResponse, createSuccessResponse } from '../utils/error-codes';
 import { findOne, query, transaction } from '../config/database';
 import { getAccount } from '../services/finance.service';
-import { getJWTSecret, TRADING_CONFIG } from '../config/app.config';
+import { TRADING_CONFIG } from '../config/app.config';
+import { authenticateUser } from '../middleware/auth';
 
 const router = express.Router();
-
-// JWT密钥 - 使用共享配置
-const JWT_SECRET = getJWTSecret();
-
-/**
- * JWT认证中间件
- * 验证用户身份并提取用户信息
- */
-const authenticateUser = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json(createErrorResponse(ErrorCode.TOKEN_MISSING));
-    }
-
-    const token = authHeader.substring(7);
-
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
-      req.user = decoded;
-      next();
-    } catch (jwtError) {
-      logger.warn(`[Finance] JWT验证失败: ${(jwtError as Error).message}`);
-      const isExpired = (jwtError as any).name === 'TokenExpiredError';
-      return res.status(401).json(
-        createErrorResponse(isExpired ? ErrorCode.TOKEN_EXPIRED : ErrorCode.TOKEN_INVALID)
-      );
-    }
-  } catch (error) {
-    logger.error('[Finance] 认证中间件错误:', error);
-    return res.status(500).json(createErrorResponse(ErrorCode.INTERNAL_ERROR, '认证失败'));
-  }
-};
-
-// 扩展Express类型
-declare global {
-  namespace Express {
-    interface Request {
-      user?: any;
-    }
-  }
-}
 
 // ====================================================
 // 用户充值申请
@@ -61,7 +18,8 @@ declare global {
  */
 router.post('/deposit', authenticateUser, async (req: express.Request, res: express.Response) => {
   try {
-    const { userId, amount, method, bankAccount, bankName, accountName, usdtAddress } = req.body;
+    const userId = req.userId;
+    const { amount, method, bankAccount, bankName, accountName, usdtAddress } = req.body;
 
     if (!userId || !amount || !method) {
       return res.status(400).json(createErrorResponse(ErrorCode.MISSING_PARAM));
@@ -100,7 +58,7 @@ router.post('/deposit', authenticateUser, async (req: express.Request, res: expr
 
     res.json(createSuccessResponse({
       id: result.rows[0].id,
-      record_number: result.rows[0].record_number,
+      order_number: result.rows[0].order_number,
       amount: parseFloat(amount),
       status: 'pending',
       createdAt: new Date().toISOString()
@@ -120,7 +78,8 @@ router.post('/deposit', authenticateUser, async (req: express.Request, res: expr
  */
 router.post('/withdraw', authenticateUser, async (req: express.Request, res: express.Response) => {
   try {
-    const { userId, amount, method, bankAccount, bankName, accountName, usdtAddress } = req.body;
+    const userId = req.userId;
+    const { amount, method, bankAccount, bankName, accountName, usdtAddress } = req.body;
 
     if (!userId || !amount || !method) {
       return res.status(400).json(createErrorResponse(ErrorCode.MISSING_PARAM));
@@ -175,33 +134,6 @@ router.post('/withdraw', authenticateUser, async (req: express.Request, res: exp
       [
         uuidv4(),
         userId,
-        parseFloat(amount),
-        method,
-        bankAccount || null,
-        bankName || null,
-        accountName || null,
-        usdtAddress || null,
-        'pending',
-      ]
-    );
-
-    const totalTodayWithdraw = parseFloat(todayWithdraws.rows[0].total_withdraw) || 0;
-    const dailyLimit = 10000; // 每日提现限额10000
-
-    if (totalTodayWithdraw + parseFloat(amount) > dailyLimit) {
-      return res.status(400).json(createErrorResponse(ErrorCode.WITHDRAW_LIMIT_EXCEEDED, `超出每日提现限额，今日已提现${totalTodayWithdraw}，限额${dailyLimit}`));
-    }
-
-    // 创建提现记录到数据库
-    const result = await query(
-      `INSERT INTO financial_records
-       (record_number, user_id, type, amount, payment_method, bank_account, bank_name, account_name, usdt_address, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
-       RETURNING id, record_number`,
-      [
-        uuidv4(),
-        userId,
-        'withdraw',
         parseFloat(amount),
         method,
         bankAccount || null,

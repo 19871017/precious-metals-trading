@@ -140,7 +140,7 @@ router.get('/exposure', async (req: Request, res: Response) => {
     res.status(500).json({
       code: 5000,
       message: '服务器内部错误',
-      null
+      data: null
     });
   }
 });

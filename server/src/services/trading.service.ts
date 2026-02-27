@@ -334,7 +334,7 @@ export async function closePosition(data: ClosePositionData) {
     }
 
     // 5. 计算手续费
-    const commission = closeLotSize * (pos.commission / pos.lot_size);
+    const commission = pos.lot_size > 0 ? closeLotSize * (pos.commission / pos.lot_size) : 0;
 
     // 6. 计算净盈亏
     const netProfit = profit - commission;

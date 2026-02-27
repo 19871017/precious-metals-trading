@@ -9,6 +9,7 @@ import {
 import { Calculator } from '../utils/calculator';
 import { PositionManager } from './OrderManager';
 import { positionLock } from '../utils/lock';
+import logger from '../utils/logger';
 
 // ============================================
 // 风险管理器
@@ -259,8 +260,23 @@ export class RiskManager {
         const shouldClose = this.checkSlTpTrigger(position, market.lastPrice);
 
         if (shouldClose) {
-          // 这里应该触发平仓逻辑
-          logger.warn(`触发止盈止损平仓: ${position.id}`);
+          // 使用锁防止重复平仓
+          const closedPosition = await positionLock.runWithLock(`sltp_${position.id}`, async () => {
+            // 再次检查仓位状态，可能已被其他操作平仓
+            const currentPosition = this.positionManager.getPosition(position.id);
+            if (!currentPosition || currentPosition.status !== PositionStatus.OPEN) {
+              return null;
+            }
+            // 执行平仓
+            return this.positionManager.closePosition(position.id, market.lastPrice);
+          });
+
+          if (closedPosition) {
+            const reason = position.stopLoss && market.lastPrice <= position.stopLoss ? '止损触发' : '止盈触发';
+            logger.info(`[RiskManager] ${reason}平仓: 仓位${position.id}, 价格${market.lastPrice}`);
+            // 结算账户
+            this.settlePosition(userId, closedPosition.realizedPnl, closedPosition.marginUsed);
+          }
         }
       }
     }

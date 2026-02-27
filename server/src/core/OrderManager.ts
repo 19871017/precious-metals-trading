@@ -81,14 +81,14 @@ export class OrderManager {
     } else if (order.type === OrderType.LIMIT && order.price) {
       // 限价单检查是否达到触发条件
       if (order.direction === OrderDirection.BUY) {
-        // 买入限价单：当市场价 <= 限价时成交
+        // 买入限价单：当市场价 <= 限价时成交（以限价或更低的价格买入）
         if (marketData.lastPrice > order.price) {
           order.status = OrderStatus.PENDING;
           order.updatedAt = new Date();
           return null;
         }
-      } else {
-        // 卖出限价单：当市场价 >= 限价时成交
+      } else if (order.direction === OrderDirection.SELL) {
+        // 卖出限价单：当市场价 >= 限价时成交（以限价或更高的价格卖出）
         if (marketData.lastPrice < order.price) {
           order.status = OrderStatus.PENDING;
           order.updatedAt = new Date();

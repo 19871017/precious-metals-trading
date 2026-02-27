@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { OrderManager, PositionManager } from '../core/OrderManager';
 import { RiskManager } from '../core/RiskManager';
@@ -9,11 +8,8 @@ import { Calculator } from '../utils/calculator';
 import { orderLock, marginLock } from '../utils/lock';
 import logger from '../utils/logger';
 import { ErrorCode, createErrorResponse, createSuccessResponse } from '../utils/error-codes';
-import { getJWTSecret } from '../config/app.config';
 import { validateCSRF } from '../middleware/csrf';
-
-// JWT密钥 - 必须通过环境变量配置
-const JWT_SECRET = getJWTSecret();
+import { authenticateUser, optionalAuth } from '../middleware/auth';
 
 // ============================================
 // API 路由
@@ -34,45 +30,6 @@ export function createApiRouter(
     data,
     timestamp: Date.now()
   });
-
-  /**
-   * JWT认证中间件
-   * 验证用户身份
-   */
-  const authenticateUser = (req: any, res: any, next: any) => {
-    try {
-      const authHeader = req.headers.authorization;
-
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json(createErrorResponse(ErrorCode.TOKEN_MISSING));
-      }
-
-      const token = authHeader.substring(7);
-
-      if (!JWT_SECRET) {
-        logger.error('[API] JWT_SECRET未配置');
-        return res.status(500).json(createErrorResponse(ErrorCode.INTERNAL_ERROR, '服务器配置错误'));
-      }
-
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET) as any;
-        req.userId = decoded.userId || decoded.id;
-        req.user = decoded;
-        next();
-      } catch (jwtError) {
-        const errorMessage = jwtError instanceof Error ? jwtError.message : '验证失败';
-        logger.warn(`[API] JWT验证失败: ${errorMessage}`);
-        const isExpired = (jwtError as any).name === 'TokenExpiredError';
-        return res.status(401).json(
-          createErrorResponse(isExpired ? ErrorCode.TOKEN_EXPIRED : ErrorCode.TOKEN_INVALID)
-        );
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '认证失败';
-      logger.error('[API] 认证中间件错误:', errorMessage);
-      return res.status(500).json(createErrorResponse(ErrorCode.INTERNAL_ERROR, errorMessage));
-    }
-  };
 
   // ============================================
   // 账户类 API
@@ -99,8 +56,8 @@ export function createApiRouter(
   });
 
   // GET /api/account/balance - 获取账户余额
-  router.get('/account/balance', (req, res) => {
-    const userId = req.headers['user-id'] as string || 'demo-user';
+  router.get('/account/balance', optionalAuth, (req: any, res: any) => {
+    const userId = req.userId || req.headers['user-id'] as string || 'demo-user';
     const account = riskManager.getAccount(userId);
 
     if (!account) {
@@ -115,8 +72,8 @@ export function createApiRouter(
   });
 
   // GET /api/account/risk-level - 获取账户风险等级
-  router.get('/api/account/risk-level', (req, res) => {
-    const userId = req.headers['user-id'] as string || 'demo-user';
+  router.get('/api/account/risk-level', optionalAuth, (req: any, res: any) => {
+    const userId = req.userId || req.headers['user-id'] as string || 'demo-user';
     const preview = riskManager.getRiskPreview(userId);
 
     if (!preview) {
@@ -569,8 +526,8 @@ export function createApiRouter(
   // ============================================
 
   // GET /api/risk/preview - 风险预览
-  router.get('/risk/preview', (req, res) => {
-    const userId = req.headers['user-id'] as string || 'demo-user';
+  router.get('/risk/preview', optionalAuth, (req: any, res: any) => {
+    const userId = req.userId || req.headers['user-id'] as string || 'demo-user';
     const { productCode, price, quantity, leverage, direction } = req.query;
 
     if (!productCode || !price || !quantity || !leverage || !direction) {
@@ -605,8 +562,8 @@ export function createApiRouter(
   });
 
   // GET /api/risk/liquidation-records - 强平记录
-  router.get('/risk/liquidation-records', (req, res) => {
-    const userId = req.headers['user-id'] as string || 'demo-user';
+  router.get('/risk/liquidation-records', optionalAuth, (req: any, res: any) => {
+    const userId = req.userId || req.headers['user-id'] as string || 'demo-user';
     const records = positionManager.getLiquidationRecords(userId);
 
     res.json(success(records));

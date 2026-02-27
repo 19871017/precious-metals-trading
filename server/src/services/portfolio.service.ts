@@ -119,7 +119,7 @@ export async function getPortfolio(userId: number): Promise<Portfolio> {
       quantity: parseFloat(row.quantity),
       openPrice: parseFloat(row.open_price),
       currentPrice: row.current_price ? parseFloat(row.current_price) : parseFloat(row.open_price),
-      marketValue: row.current_price ? parseFloat(row.current_price) * parseFloat(row.quantity) : 0,
+      marketValue: row.current_price ? parseFloat(row.current_price) * parseFloat(row.quantity) : parseFloat(row.open_price) * parseFloat(row.quantity),
       costBasis: parseFloat(row.open_price) * parseFloat(row.quantity),
       unrealizedPnL: parseFloat(row.unrealized_pnl || 0),
       unrealizedPnLPercent: row.current_price ?
