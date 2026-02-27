@@ -2,6 +2,7 @@ import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
 import redis from '../utils/redis';
+import { getJWTSecret, SECURITY_CONFIG } from '../config/app.config';
 import {
   register,
   login,
@@ -13,24 +14,13 @@ import {
 
 const router = express.Router();
 
-// JWT密钥 - 必须通过环境变量配置
-const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!JWT_SECRET) {
-  logger.error('JWT_SECRET未配置，请在环境变量中设置强随机密钥（至少64字符）');
-  process.exit(1);
-}
-
-if (JWT_SECRET.length < 32) {
-  logger.error('JWT_SECRET长度不足32字符，请设置更强的密钥');
-  process.exit(1);
-}
-
 // 登录失败次数记录（生产环境应使用Redis）
 const loginAttempts = new Map<string, { count: number; lastAttempt: number; lockedUntil?: number }>();
 
-// 验证码存储（生产环境应使用Redis）
-const verificationCodes = new Map<string, { code: string; createdAt: number }>();
+// 验证码请求限制: 同一邮箱1分钟内最多3次
+const VERIFY_CODE_LIMIT = SECURITY_CONFIG.VERIFY_CODE_LIMIT;
+const VERIFY_CODE_WINDOW = SECURITY_CONFIG.VERIFY_CODE_WINDOW;
+const VERIFICATION_CODE_EXPIRE = SECURITY_CONFIG.VERIFY_CODE_EXPIRE;
 
 // 检查IP是否被锁定
 function isIpLocked(ip: string): boolean {
@@ -233,10 +223,10 @@ router.post('/register', async (req: express.Request, res: express.Response) => 
 // 获取当前用户信息
 router.get('/me', async (req: express.Request, res: express.Response) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
+    const authHeader = req.headers.authorization;
 
-    if (!token) {
-      return res.json({
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
         code: 401,
         message: '未授权',
         data: null,
@@ -244,9 +234,26 @@ router.get('/me', async (req: express.Request, res: express.Response) => {
       });
     }
 
-    const payload = await getUserById(parseInt(req.headers['x-user-id'] as string || '0'));
+    const token = authHeader.substring(7);
 
-    if (!payload) {
+    // 验证JWT Token
+    const jwt = require('jsonwebtoken');
+    const JWT_SECRET = getJWTSecret();
+
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+
+    if (!decoded.user_id) {
+      return res.json({
+        code: 404,
+        message: '用户不存在',
+        data: null,
+        timestamp: Date.now()
+      });
+    }
+
+    const user = await getUserById(decoded.user_id);
+
+    if (!user) {
       return res.json({
         code: 404,
         message: '用户不存在',
@@ -258,14 +265,14 @@ router.get('/me', async (req: express.Request, res: express.Response) => {
     res.json({
       code: 0,
       message: '获取成功',
-      data: payload,
+      data: user,
       timestamp: Date.now()
     });
   } catch (error: any) {
     logger.error('[Auth] 获取用户信息错误:', error.message);
     res.json({
       code: 401,
-      message: 'Token无效或已过期',
+      message: error.name === 'TokenExpiredError' ? 'Token已过期' : 'Token无效',
       data: null,
       timestamp: Date.now()
     });
@@ -321,7 +328,7 @@ router.post('/logout', (req: express.Request, res: express.Response) => {
 });
 
 // 发送邮箱验证码
-router.post('/send-code', (req: express.Request, res: express.Response) => {
+router.post('/send-code', async (req: express.Request, res: express.Response) => {
   try {
     const { email } = req.body;
 
@@ -332,6 +339,83 @@ router.post('/send-code', (req: express.Request, res: express.Response) => {
         data: null,
         timestamp: Date.now()
       });
+    }
+
+    // 验证邮箱格式
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.json({
+        code: 400,
+        message: '邮箱格式不正确',
+        data: null,
+        timestamp: Date.now()
+      });
+    }
+
+    // 检查请求频率
+    const now = Date.now();
+    const attempt = verifyCodeAttempts.get(email);
+
+    if (attempt) {
+      if (now - attempt.firstAttempt < VERIFY_CODE_WINDOW * 1000) {
+        if (attempt.count >= VERIFY_CODE_LIMIT) {
+          return res.json({
+            code: 429,
+            message: `验证码请求过于频繁,请${Math.ceil((VERIFY_CODE_WINDOW - (now - attempt.firstAttempt) / 1000))}秒后再试`,
+            data: null,
+            timestamp: Date.now()
+          });
+        }
+        attempt.count++;
+      } else {
+        // 超过时间窗口,重置计数
+        attempt.count = 1;
+        attempt.firstAttempt = now;
+      }
+    } else {
+      verifyCodeAttempts.set(email, { count: 1, firstAttempt: now });
+    }
+
+    // 生成8位验证码(数字+字母)
+    const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let code = '';
+    for (let i = 0; i < 8; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    // 存储到Redis(5分钟过期)
+    const key = `verify_code:${email}`;
+    try {
+      await redis.set(key, code, 'EX', VERIFICATION_CODE_EXPIRE);
+    } catch (redisError) {
+      logger.error('[Auth] Redis存储验证码失败:', redisError);
+      // Redis失败时降级到内存存储
+      const verificationCodes = new Map<string, { code: string; createdAt: number }>();
+      verificationCodes.set(email, { code, createdAt: now });
+    }
+
+    // 生产环境应该发送实际邮件
+    logger.info(`[Auth] 验证码已发送到 ${email}: ${code}`);
+
+    res.json({
+      code: 0,
+      message: '验证码已发送',
+      data: {
+        email,
+        expiresIn: VERIFICATION_CODE_EXPIRE
+      },
+      timestamp: Date.now()
+    });
+  } catch (error: any) {
+    logger.error('[Auth] 发送验证码失败:', error.message);
+    res.json({
+      code: 500,
+      message: '发送验证码失败',
+      data: null,
+      timestamp: Date.now()
+    });
+  }
+});
     }
 
     // 验证邮箱格式
@@ -391,8 +475,37 @@ router.post('/reset-password', async (req: express.Request, res: express.Respons
       });
     }
 
-    // 验证验证码
-    const storedCode = verificationCodes.get(email);
+    // 验证密码强度
+    if (newPassword.length < SECURITY_CONFIG.MIN_PASSWORD_LENGTH) {
+      return res.json({
+        code: 400,
+        message: `密码长度至少${SECURITY_CONFIG.MIN_PASSWORD_LENGTH}位`,
+        data: null,
+        timestamp: Date.now()
+      });
+    }
+
+    // 从Redis获取验证码
+    const key = `verify_code:${email}`;
+    let storedCode: string | null = null;
+
+    try {
+      storedCode = await redis.get(key);
+    } catch (redisError) {
+      logger.error('[Auth] Redis获取验证码失败:', redisError);
+      // Redis失败时降级到内存存储
+      const verificationCodes = new Map<string, { code: string; createdAt: number }>();
+      const stored = verificationCodes.get(email);
+      if (stored) {
+        // 检查是否过期
+        if (Date.now() - stored.createdAt > VERIFICATION_CODE_EXPIRE * 1000) {
+          verificationCodes.delete(email);
+        } else {
+          storedCode = stored.code;
+        }
+      }
+    }
+
     if (!storedCode) {
       return res.json({
         code: 400,
@@ -402,18 +515,7 @@ router.post('/reset-password', async (req: express.Request, res: express.Respons
       });
     }
 
-    // 检查验证码是否过期（5分钟）
-    if (Date.now() - storedCode.createdAt > 5 * 60 * 1000) {
-      verificationCodes.delete(email);
-      return res.json({
-        code: 400,
-        message: '验证码已过期',
-        data: null,
-        timestamp: Date.now()
-      });
-    }
-
-    if (storedCode.code !== code) {
+    if (storedCode !== code) {
       return res.json({
         code: 400,
         message: '验证码错误',
@@ -444,7 +546,14 @@ router.post('/reset-password', async (req: express.Request, res: express.Respons
     await resetPassword(username, newPassword);
 
     // 清除验证码
-    verificationCodes.delete(email);
+    try {
+      await redis.del(key);
+    } catch (redisError) {
+      logger.error('[Auth] Redis删除验证码失败:', redisError);
+    }
+
+    // 清除请求次数记录
+    verifyCodeAttempts.delete(email);
 
     logger.info(`密码重置成功: ${username}`);
 

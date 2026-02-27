@@ -405,8 +405,8 @@ export function createApiRouter(
   });
 
   // GET /api/order/list - 获取订单列表
-  router.get('/order/list', (req, res) => {
-    const userId = req.headers['user-id'] as string || 'demo-user';
+  router.get('/order/list', authenticateUser, (req: any, res: any) => {
+    const userId = req.userId;
     const { status } = req.query;
 
     let orders = orderManager.getUserOrders(userId);
@@ -470,8 +470,8 @@ export function createApiRouter(
   // ============================================
 
   // GET /api/position/list - 获取持仓列表
-  router.get('/position/list', (req, res) => {
-    const userId = req.headers['user-id'] as string || 'demo-user';
+  router.get('/position/list', authenticateUser, (req: any, res: any) => {
+    const userId = req.userId;
     const positions = positionManager.getUserPositions(userId);
 
     // 更新未实现盈亏
@@ -497,8 +497,8 @@ export function createApiRouter(
   });
 
   // POST /api/position/close - 平仓
-  router.post('/position/close', (req, res) => {
-    const userId = req.headers['user-id'] as string || 'demo-user';
+  router.post('/position/close', authenticateUser, (req: any, res: any) => {
+    const userId = req.userId;
     const { positionId } = req.body;
 
     if (!positionId) {
@@ -538,8 +538,8 @@ export function createApiRouter(
   });
 
   // POST /api/position/update-sl-tp - 修改止盈止损
-  router.post('/position/update-sl-tp', (req, res) => {
-    const userId = req.headers['user-id'] as string || 'demo-user';
+  router.post('/position/update-sl-tp', authenticateUser, (req: any, res: any) => {
+    const userId = req.userId;
     const { positionId, stopLoss, takeProfit }: UpdateSlTpRequest = req.body;
 
     if (!positionId) {

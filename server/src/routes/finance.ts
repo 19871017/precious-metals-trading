@@ -5,16 +5,12 @@ import logger from '../utils/logger';
 import { ErrorCode, createErrorResponse, createSuccessResponse } from '../utils/error-codes';
 import { findOne, query, transaction } from '../config/database';
 import { getAccount } from '../services/finance.service';
+import { getJWTSecret, TRADING_CONFIG } from '../config/app.config';
 
 const router = express.Router();
 
-// JWT密钥 - 必须通过环境变量配置（确保与auth.ts一致）
-const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!JWT_SECRET || JWT_SECRET.length < 32) {
-  logger.error('[Finance] JWT_SECRET未配置或长度不足32字符');
-  throw new Error('JWT_SECRET not configured');
-}
+// JWT密钥 - 使用共享配置
+const JWT_SECRET = getJWTSecret();
 
 /**
  * JWT认证中间件
@@ -76,8 +72,8 @@ router.post('/deposit', authenticateUser, async (req: express.Request, res: expr
       return res.status(400).json(createErrorResponse(ErrorCode.OUT_OF_RANGE, '充值金额必须大于0'));
     }
 
-    // 验证最低充值金额（例如10元）
-    if (amount < 10) {
+    // 验证最低充值金额
+    if (amount < TRADING_CONFIG.MIN_DEPOSIT_AMOUNT) {
       return res.status(400).json(createErrorResponse(ErrorCode.DEPOSIT_TOO_LOW));
     }
 
@@ -136,8 +132,8 @@ router.post('/withdraw', authenticateUser, async (req: express.Request, res: exp
     }
 
     // 验证最低提现金额
-    if (amount < 100) {
-      return res.status(400).json(createErrorResponse(ErrorCode.WITHDRAW_TOO_HIGH, '提现金额不能低于100'));
+    if (amount < TRADING_CONFIG.MIN_WITHDRAW_AMOUNT) {
+      return res.status(400).json(createErrorResponse(ErrorCode.WITHDRAW_TOO_HIGH, `提现金额不能低于${TRADING_CONFIG.MIN_WITHDRAW_AMOUNT}`));
     }
 
     // 检查用户余额是否足够
@@ -152,6 +148,7 @@ router.post('/withdraw', authenticateUser, async (req: express.Request, res: exp
     }
 
     // 检查每日提现限额
+    const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayWithdraws = await query(
       `SELECT COALESCE(SUM(amount), 0) as total_withdraw
