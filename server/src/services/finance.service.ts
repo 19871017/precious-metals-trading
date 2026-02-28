@@ -565,7 +565,7 @@ export async function getWithdraws(
      LEFT JOIN users u ON w.user_id = u.id
      ${whereClause}
      ORDER BY w.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
-    [...params, pageSize, offset]
+     [...params, pageSize, offset]
   );
 
   return {
@@ -575,4 +575,140 @@ export async function getWithdraws(
     pageSize,
     totalPages: Math.ceil(total / pageSize),
   };
+}
+
+export interface FreezeBalanceData {
+  userId: number;
+  amount: number;
+  reason: string;
+  orderId?: number;
+  positionId?: number;
+  createdBy?: string;
+}
+
+export interface UnfreezeBalanceData {
+  userId: number;
+  amount: number;
+  reason: string;
+  orderId?: number;
+  positionId?: number;
+  createdBy?: string;
+}
+
+export async function freezeBalance(data: FreezeBalanceData): Promise<boolean> {
+  const { transaction } = await import('../config/database');
+
+  return await transaction(async (client) => {
+    const accountResult = await client.query(
+      'SELECT * FROM accounts WHERE user_id = $1 FOR UPDATE',
+      [data.userId]
+    );
+
+    if (!accountResult.rows[0]) {
+      throw new Error('Account not found');
+    }
+
+    const account = accountResult.rows[0];
+
+    if (account.available_balance < data.amount) {
+      throw new Error('Insufficient available balance to freeze');
+    }
+
+    await client.query(
+      `UPDATE accounts
+       SET available_balance = available_balance - $1,
+           frozen_amount = frozen_amount + $2,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = $3`,
+      [data.amount, data.amount, data.userId]
+    );
+
+    const { auditLogService } = await import('./AuditLogService');
+
+    await auditLogService.createAuditLog(client, {
+      userId: data.userId,
+      operation: 'FREEZE',
+      amount: data.amount,
+      beforeBalance: account.balance,
+      afterBalance: account.balance,
+      orderId: data.orderId,
+      positionId: data.positionId,
+      description: data.reason,
+      createdBy: data.createdBy || 'SYSTEM',
+    });
+
+    return true;
+  });
+}
+
+export async function unfreezeBalance(data: UnfreezeBalanceData): Promise<boolean> {
+  const { transaction } = await import('../config/database');
+
+  return await transaction(async (client) => {
+    const accountResult = await client.query(
+      'SELECT * FROM accounts WHERE user_id = $1 FOR UPDATE',
+      [data.userId]
+    );
+
+    if (!accountResult.rows[0]) {
+      throw new Error('Account not found');
+    }
+
+    const account = accountResult.rows[0];
+
+    if (account.frozen_amount < data.amount) {
+      throw new Error('Insufficient frozen amount to unfreeze');
+    }
+
+    await client.query(
+      `UPDATE accounts
+       SET available_balance = available_balance + $1,
+           frozen_amount = frozen_amount - $2,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = $3`,
+      [data.amount, data.amount, data.userId]
+    );
+
+    const { auditLogService } = await import('./AuditLogService');
+
+    await auditLogService.createAuditLog(client, {
+      userId: data.userId,
+      operation: 'UNFREEZE',
+      amount: data.amount,
+      beforeBalance: account.balance,
+      afterBalance: account.balance,
+      orderId: data.orderId,
+      positionId: data.positionId,
+      description: data.reason,
+      createdBy: data.createdBy || 'SYSTEM',
+    });
+
+    return true;
+  });
+}
+
+export async function getAvailableBalance(userId: number): Promise<number> {
+  const account = await findOne(
+    'SELECT available_balance FROM accounts WHERE user_id = $1',
+    [userId]
+  );
+
+  if (!account) {
+    throw new Error('Account not found');
+  }
+
+  return account.available_balance;
+}
+
+export async function getFrozenAmount(userId: number): Promise<number> {
+  const account = await findOne(
+    'SELECT frozen_amount FROM accounts WHERE user_id = $1',
+    [userId]
+  );
+
+  if (!account) {
+    throw new Error('Account not found');
+  }
+
+  return account.frozen_amount || 0;
 }
