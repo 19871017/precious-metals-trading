@@ -15,7 +15,11 @@
     "pm2:restart": "pm2 restart ecosystem.config.js",
     "db:migrate": "node --import tsx/esm src/scripts/migrate.ts",
     "db:seed": "node --import tsx/esm src/scripts/seed.ts",
-    "db:init-shuhai": "node --import tsx/esm src/scripts/init-shuhai-cache.ts"
+    "db:init-shuhai": "node --import tsx/esm src/scripts/init-shuhai-cache.ts",
+    "test": "node run-all-tests.cjs",
+    "test:unit": "node run-all-tests.cjs",
+    "test:report": "node generate-test-report.cjs",
+    "test:coverage": "npm run test && npm run test:report"
   },
   "keywords": [
     "trading",
@@ -50,12 +54,13 @@
     "winston": "^3.11.0"
   },
   "devDependencies": {
+    "@jest/reporters": "^30.2.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/compression": "^1.7.5",
     "@types/cors": "^2.8.17",
     "@types/crypto-js": "^4.2.2",
     "@types/express": "^4.17.21",
-    "@types/ioredis": "^5.0.2",
+    "@types/ioredis": "^5.0.0",
     "@types/jsonwebtoken": "^9.0.5",
     "@types/node": "^20.10.6",
     "@types/pg": "^8.10.9",
