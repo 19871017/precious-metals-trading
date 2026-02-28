@@ -20,6 +20,7 @@ import aiRouter from './routes/ai';
 import portfolioRouter from './routes/portfolio';
 import { systemPriorityController, Priority } from './services/SystemPriorityController';
 import { priorityRateLimit, systemLoadGuard } from './middleware/priority-rate-limit';
+import { orderRateLimit, getGlobalQueueStatus, resetUserRateLimit, resetGlobalQueue } from './middleware/order-rate-limit';
 
 dotenv.config();
 
@@ -226,6 +227,7 @@ app.get('/system/load', async (req, res) => {
   try {
     const currentLoad = systemPriorityController.getCurrentLoad();
     const queueStats = await systemPriorityController.getQueueStats();
+    const globalQueueStatus = await getGlobalQueueStatus();
     
     res.json({
       code: 0,
@@ -233,6 +235,7 @@ app.get('/system/load', async (req, res) => {
       data: {
         load: currentLoad,
         queues: queueStats,
+        orderQueue: globalQueueStatus,
         timestamp: Date.now(),
       },
     });
@@ -241,6 +244,57 @@ app.get('/system/load', async (req, res) => {
     res.status(500).json({
       code: 'INTERNAL_ERROR',
       message: '获取系统负载统计失败',
+    });
+  }
+});
+
+// 订单限流统计
+app.get('/system/order-rate-limit', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    
+    if (!userId) {
+      return res.status(400).json({
+        code: 'MISSING_PARAM',
+        message: '缺少用户ID',
+      });
+    }
+
+    const userStats = await getUserRateLimitStats(userId as string);
+    
+    res.json({
+      code: 0,
+      message: '订单限流统计',
+      data: {
+        userId,
+        ...userStats,
+        timestamp: Date.now(),
+      },
+    });
+  } catch (error) {
+    logger.error('[Main] 获取订单限流统计失败', error);
+    res.status(500).json({
+      code: 'INTERNAL_ERROR',
+      message: '获取订单限流统计失败',
+    });
+  }
+});
+
+// 全局队列状态
+app.get('/system/queue-status', async (req, res) => {
+  try {
+    const queueStatus = await getGlobalQueueStatus();
+    
+    res.json({
+      code: 0,
+      message: '全局队列状态',
+      data: queueStatus,
+    });
+  } catch (error) {
+    logger.error('[Main] 获取全局队列状态失败', error);
+    res.status(500).json({
+      code: 'INTERNAL_ERROR',
+      message: '获取全局队列状态失败',
     });
   }
 });

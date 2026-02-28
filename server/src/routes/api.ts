@@ -12,6 +12,7 @@ import { validateCSRF } from '../middleware/csrf';
 import { authenticateUser, optionalAuth } from '../middleware/auth';
 import { idempotency, saveIdempotencyResult, checkIdempotency } from '../middleware/idempotency';
 import { businessIdService } from '../services/BusinessIdService';
+import { orderRateLimit, onOrderCompleted } from '../middleware/order-rate-limit';
 
 // ============================================
 // API 路由
@@ -175,7 +176,7 @@ export function createApiRouter(
   // ============================================
 
   // POST /api/order/create - 创建订单
-  router.post('/order/create', authenticateUser, validateCSRF, idempotency(), async (req: any, res: any) => {
+  router.post('/order/create', authenticateUser, validateCSRF, idempotency(), orderRateLimit(), async (req: any, res: any) => {
     const userId = req.userId;
     const {
       productCode,
