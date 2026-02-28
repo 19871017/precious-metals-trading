@@ -18,6 +18,8 @@ import authRouter from './routes/auth';
 import adminRouter from './routes/admin';
 import aiRouter from './routes/ai';
 import portfolioRouter from './routes/portfolio';
+import { systemPriorityController, Priority } from './services/SystemPriorityController';
+import { priorityRateLimit, systemLoadGuard } from './middleware/priority-rate-limit';
 
 dotenv.config();
 
@@ -89,6 +91,12 @@ const apiLimiter = createLimiter(
 // 应用全局限流
 app.use(apiLimiter);
 
+// 系统负载保护（紧急时限制所有请求）
+app.use(systemLoadGuard('EMERGENCY'));
+
+// 优先级限流中间件
+app.use(priorityRateLimit());
+
 // 解析JSON
 app.use(express.json());
 
@@ -100,6 +108,20 @@ const positionManager = new PositionManager();
 const orderManager = new OrderManager(positionManager);
 const riskManager = new RiskManager(positionManager);
 const marketService = new MarketDataService();
+
+// ============================================
+// 初始化优先级控制器
+// ============================================
+
+(async () => {
+  try {
+    logger.info('[Main] 初始化优先级控制器');
+    await systemPriorityController.initialize();
+    logger.info('[Main] 优先级控制器初始化成功');
+  } catch (error) {
+    logger.error('[Main] 优先级控制器初始化失败', error);
+  }
+})();
 
 // ============================================
 // WebSocket 实时推送配置
@@ -179,15 +201,48 @@ stopLossTakeProfitService.start();
 
 // 健康检查
 app.get('/health', (req, res) => {
+  const currentLoad = systemPriorityController.getCurrentLoad();
+  
   res.json({
     code: 0,
     message: '服务运行正常',
     data: {
       status: 'ok',
       timestamp: Date.now(),
-      uptime: process.uptime()
-    }
+      uptime: process.uptime(),
+      load: {
+        level: currentLoad.level,
+        cpu: `${currentLoad.cpu.toFixed(2)}%`,
+        memory: `${currentLoad.memory.toFixed(2)}%`,
+        queueDepths: currentLoad.queueDepths,
+        activeJobs: currentLoad.activeJobs,
+      },
+    },
   });
+});
+
+// 系统负载统计
+app.get('/system/load', async (req, res) => {
+  try {
+    const currentLoad = systemPriorityController.getCurrentLoad();
+    const queueStats = await systemPriorityController.getQueueStats();
+    
+    res.json({
+      code: 0,
+      message: '系统负载统计',
+      data: {
+        load: currentLoad,
+        queues: queueStats,
+        timestamp: Date.now(),
+      },
+    });
+  } catch (error) {
+    logger.error('[Main] 获取系统负载统计失败', error);
+    res.status(500).json({
+      code: 'INTERNAL_ERROR',
+      message: '获取系统负载统计失败',
+    });
+  }
 });
 
 // 认证路由(应用登录限流)
@@ -280,14 +335,60 @@ httpServer.listen(PORT, () => {
 });
 
 // 优雅关闭
+const gracefulShutdown = async (signal: string) => {
+  console.log(`[${signal}] 收到信号，开始优雅关闭...`);
+  
+  try {
+    // 停止优先级控制器
+    console.log('[Shutdown] 停止优先级控制器...');
+    await systemPriorityController.stop();
+    
+    // 停止行情服务
+    console.log('[Shutdown] 停止行情服务...');
+    marketService.stop();
+    
+    // 停止止盈止损服务
+    console.log('[Shutdown] 停止止盈止损服务...');
+    stopLossTakeProfitService.stop();
+    
+    // 关闭 HTTP 服务器
+    console.log('[Shutdown] 关闭 HTTP 服务器...');
+    httpServer.close(() => {
+      console.log('[Shutdown] HTTP 服务器已关闭');
+      process.exit(0);
+    });
+    
+    // 强制超时
+    setTimeout(() => {
+      console.error('[Shutdown] 优雅关闭超时，强制退出');
+      process.exit(1);
+    }, 10000); // 10秒超时
+  } catch (error) {
+    console.error('[Shutdown] 优雅关闭失败:', error);
+    process.exit(1);
+  }
+};
+
 process.on('SIGTERM', () => {
-  console.log('正在关闭服务...');
-  marketService.stop();
-  stopLossTakeProfitService.stop();
-  process.exit(0);
+  gracefulShutdown('SIGTERM');
 });
 
 process.on('SIGINT', () => {
+  gracefulShutdown('SIGINT');
+});
+  } catch (error) {
+    console.error('[Shutdown] 优雅关闭失败:', error);
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', () => {
+  gracefulShutdown('SIGTERM');
+});
+
+process.on('SIGINT', () => {
+  gracefulShutdown('SIGINT');
+});
   console.log('正在关闭服务...');
   marketService.stop();
   stopLossTakeProfitService.stop();
