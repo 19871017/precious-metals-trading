@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Loading } from 'tdesign-react';
-import { isLoggedIn, getToken, isAdmin } from '../services/auth';
+import { ensureAuthSession, logout } from '../services/auth';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -15,32 +15,33 @@ export default function ProtectedRoute({ children, requireAdmin = false }: Prote
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
-    const checkAuth = () => {
-      // 检查是否登录
-      if (!isLoggedIn()) {
-        // 如果是后台路由，跳转到管理员登录页
-        if (location.pathname.startsWith('/admin')) {
-          navigate('/admin-login', { replace: true });
-        } else {
-          navigate('/', { replace: true });
-        }
-        return;
-      }
+    let cancelled = false;
 
-      // 检查是否需要管理员权限
-      if (requireAdmin) {
-        if (!isAdmin()) {
-          // 如果不是管理员，跳转到首页
-          navigate('/home', { replace: true });
-          return;
+    const checkAuth = async () => {
+      try {
+        await ensureAuthSession({ requireAdmin });
+        if (!cancelled) {
+          setAuthorized(true);
+        }
+      } catch (error) {
+        console.error('[ProtectedRoute] 鉴权失败:', error);
+        await logout();
+        if (!cancelled) {
+          const fallback = location.pathname.startsWith('/admin') ? '/admin-login' : '/';
+          navigate(fallback, { replace: true, state: { from: location.pathname } });
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
         }
       }
-
-      setAuthorized(true);
-      setLoading(false);
     };
 
     checkAuth();
+
+    return () => {
+      cancelled = true;
+    };
   }, [navigate, location.pathname, requireAdmin]);
 
   if (loading) {

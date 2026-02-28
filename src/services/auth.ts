@@ -1,20 +1,20 @@
 // 前端认证服务
 
-// 从环境变量读取API地址，默认localhost
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
+const USE_DEMO_AUTH = import.meta.env.VITE_USE_DEMO_AUTH === 'true';
+const SESSION_STORAGE_KEY = 'auth.session.v1';
+const CSRF_HEADER_KEY = 'X-CSRF-Token';
+const CSRF_CACHE_TTL = 60 * 60 * 1000;
 
 export interface UserInfo {
-  id: string;
+  id: string | number;
   username: string;
-  role: string;
-  realName: string;
-  phone: string;
-  email: string;
-}
-
-export interface LoginResponse {
-  token: string;
-  user: UserInfo;
+  role?: string;
+  roleId?: number;
+  realName?: string;
+  phone?: string;
+  email?: string;
+  [key: string]: any;
 }
 
 export interface RegisterResponse {
@@ -22,53 +22,147 @@ export interface RegisterResponse {
   username: string;
 }
 
-// 登录API
-export async function login(username: string, password: string): Promise<LoginResponse> {
-  // 开发模式: 演示登录,任何用户名密码都可以登录
-  if (import.meta.env.DEV) {
-    const demoUser: UserInfo = {
-      id: 'demo-user-001',
-      username: username,
-      role: 'USER',
-      realName: '演示用户',
-      phone: '13800138000',
-      email: `${username}@demo.com`,
-    };
+export interface SessionData {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  user: UserInfo;
+}
 
-    const demoToken = 'demo-token-' + Date.now();
+let csrfTokenCache: string | null = null;
+let csrfFetchedAt = 0;
+let refreshPromise: Promise<SessionData | null> | null = null;
 
-    localStorage.setItem('token', demoToken);
-    localStorage.setItem('user', JSON.stringify(demoUser));
+const roleMap: Record<number, string> = {
+  1: 'ADMIN',
+  2: 'AGENT_L1',
+  3: 'AGENT_L2',
+  4: 'USER'
+};
 
-    return {
-      token: demoToken,
-      user: demoUser,
-    };
+function normalizeUser(user: any = {}): UserInfo {
+  const roleId = user.roleId ?? user.role_id;
+  return {
+    id: user.id ?? user.user_id ?? user.userId ?? '',
+    username: user.username ?? user.email ?? 'unknown',
+    role: user.role ?? roleMap[roleId as number] ?? 'USER',
+    roleId,
+    realName: user.realName ?? user.real_name ?? '',
+    phone: user.phone ?? '',
+    email: user.email ?? '',
+    ...user
+  } as UserInfo;
+}
+
+function createSession(payload: any): SessionData {
+  const accessToken = payload.access_token || payload.token;
+  if (!accessToken) {
+    throw new Error('缺少访问令牌');
+  }
+  const refreshToken = payload.refresh_token || payload.refreshToken || payload.token || '';
+  const expiresIn = Math.max(5, payload.expires_in ?? payload.expiresIn ?? 15 * 60);
+  return {
+    accessToken,
+    refreshToken,
+    expiresAt: Date.now() + expiresIn * 1000,
+    user: normalizeUser(payload.user)
+  };
+}
+
+function readSession(): SessionData | null {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as SessionData) : null;
+  } catch (error) {
+    console.error('[Auth] 解析会话失败:', error);
+    return null;
+  }
+}
+
+function writeSession(session: SessionData | null) {
+  if (!session) {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    return;
+  }
+  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+}
+
+function isSessionExpired(session: SessionData): boolean {
+  return Date.now() >= session.expiresAt - 5000;
+}
+
+async function ensureCsrfToken(force = false): Promise<string> {
+  if (!force && csrfTokenCache && Date.now() - csrfFetchedAt < CSRF_CACHE_TTL) {
+    return csrfTokenCache;
   }
 
-  // 生产模式: 调用真实API
-  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+  const response = await fetch(`${API_BASE_URL}/auth/csrf-token`, {
+    credentials: 'include'
+  });
+  const result = await response.json();
+  if (result.code !== 0 || !result.data?.csrfToken) {
+    throw new Error(result.message || '获取 CSRF Token 失败');
+  }
+  csrfTokenCache = result.data.csrfToken;
+  csrfFetchedAt = Date.now();
+  return csrfTokenCache;
+}
+
+async function callAuthEndpoint(path: string, body: Record<string, unknown>, options: { csrf?: boolean } = {}) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+
+  if (options.csrf) {
+    headers[CSRF_HEADER_KEY] = await ensureCsrfToken();
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ username, password })
+    credentials: 'include',
+    headers,
+    body: JSON.stringify(body)
   });
 
   const result = await response.json();
-
-  if (result.code !== 0) {
-    throw new Error(result.message || '登录失败');
+  if (!response.ok || result.code !== 0) {
+    throw new Error(result.message || '请求失败');
   }
-
-  // 保存token到localStorage
-  localStorage.setItem('token', result.data.token);
-  localStorage.setItem('user', JSON.stringify(result.data.user));
-
   return result.data;
 }
 
-// 注册API
+function buildDemoSession(username: string): SessionData {
+  const demoUser: UserInfo = {
+    id: 'demo-user-001',
+    username,
+    role: 'USER',
+    roleId: 4,
+    realName: '演示用户',
+    phone: '13800138000',
+    email: `${username}@demo.com`
+  };
+  const token = `demo-token-${Date.now()}`;
+  return {
+    accessToken: token,
+    refreshToken: token,
+    expiresAt: Date.now() + 60 * 60 * 1000,
+    user: demoUser
+  };
+}
+
+export async function login(username: string, password: string): Promise<SessionData> {
+  if (USE_DEMO_AUTH) {
+    const demoSession = buildDemoSession(username);
+    writeSession(demoSession);
+    return demoSession;
+  }
+
+  const data = await callAuthEndpoint('/auth/login', { username, password }, { csrf: true });
+  const session = createSession(data);
+  writeSession(session);
+  return session;
+}
+
 export async function register(params: {
   username: string;
   password: string;
@@ -76,131 +170,137 @@ export async function register(params: {
   email?: string;
   agentCode?: string;
 }): Promise<RegisterResponse> {
-  const response = await fetch(`${API_BASE_URL}/auth/register`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(params)
-  });
+  const payload: Record<string, unknown> = {
+    username: params.username,
+    password: params.password,
+    phone: params.phone,
+    email: params.email
+  };
 
-  const result = await response.json();
-
-  if (result.code !== 0) {
-    throw new Error(result.message || '注册失败');
+  if (params.agentCode) {
+    payload.referral_code = params.agentCode;
   }
 
-  return result.data;
+  return await callAuthEndpoint('/auth/register', payload, { csrf: true });
 }
 
-// 获取当前用户
 export async function getCurrentUser(): Promise<UserInfo> {
-  const token = localStorage.getItem('token');
-
-  if (!token) {
-    throw new Error('未登录');
-  }
-
+  const session = await ensureAuthSession();
   const response = await fetch(`${API_BASE_URL}/auth/me`, {
     headers: {
-      'Authorization': `Bearer ${token}`
+      Authorization: `Bearer ${session.accessToken}`
     }
   });
-
   const result = await response.json();
-
   if (result.code !== 0) {
     throw new Error(result.message || '获取用户信息失败');
   }
-
-  return result.data;
+  const updated = { ...session, user: normalizeUser(result.data) };
+  writeSession(updated);
+  return updated.user;
 }
 
-// 登出
-export function logout() {
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
+export async function logout(): Promise<void> {
+  const session = readSession();
+  writeSession(null);
+  if (!session?.accessToken) {
+    return;
+  }
+  try {
+    await fetch(`${API_BASE_URL}/auth/logout`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`
+      }
+    });
+  } catch (error) {
+    console.warn('[Auth] 退出登录调用失败:', error);
+  }
 }
 
-// 获取token
 export function getToken(): string | null {
-  return localStorage.getItem('token');
+  const session = readSession();
+  if (!session || isSessionExpired(session)) {
+    return null;
+  }
+  return session.accessToken;
 }
 
-// 检查是否登录
 export function isLoggedIn(): boolean {
-  return !!localStorage.getItem('token');
+  const session = readSession();
+  return !!session && !isSessionExpired(session);
 }
 
-// 获取用户信息
 export function getUser(): UserInfo | null {
-  const userStr = localStorage.getItem('user');
-  return userStr ? JSON.parse(userStr) : null;
+  return readSession()?.user ?? null;
 }
 
-// 检查是否是管理员
 export function isAdmin(): boolean {
   const user = getUser();
-  return user?.role === 'ADMIN';
+  if (!user) return false;
+  return user.role === 'ADMIN' || user.roleId === 1;
 }
 
-// 验证Token
 export async function verifyToken(token: string): Promise<any> {
-  const response = await fetch(`${API_BASE_URL}/auth/verify`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ token })
-  });
-
-  const result = await response.json();
-
-  if (result.code !== 0) {
-    throw new Error(result.message || 'Token验证失败');
-  }
-
-  return result.data;
+  return await callAuthEndpoint('/auth/verify', { token });
 }
 
-// 发送邮箱验证码
 export async function sendVerificationCode(email: string): Promise<{ email: string; expiresIn: number }> {
-  const response = await fetch(`${API_BASE_URL}/auth/send-code`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ email })
-  });
-
-  const result = await response.json();
-
-  if (result.code !== 0) {
-    throw new Error(result.message || '发送验证码失败');
-  }
-
-  return result.data;
+  return await callAuthEndpoint('/auth/send-code', { email });
 }
 
-// 重置密码
-export async function resetPassword(params: {
-  email: string;
-  code: string;
-  newPassword: string;
-}): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(params)
-  });
+export async function resetPassword(params: { email: string; code: string; newPassword: string }): Promise<void> {
+  await callAuthEndpoint('/auth/reset-password', params, { csrf: true });
+}
 
-  const result = await response.json();
-
-  if (result.code !== 0) {
-    throw new Error(result.message || '重置密码失败');
+export async function ensureAuthSession(options: { requireAdmin?: boolean } = {}): Promise<SessionData> {
+  let session = readSession();
+  if (!session) {
+    throw new Error('UNAUTHENTICATED');
   }
+
+  if (isSessionExpired(session)) {
+    session = await refreshSession();
+  }
+
+  if (!session) {
+    throw new Error('UNAUTHENTICATED');
+  }
+
+  if (options.requireAdmin && !isAdmin()) {
+    throw new Error('FORBIDDEN');
+  }
+
+  return session;
+}
+
+export async function refreshSession(): Promise<SessionData | null> {
+  const current = readSession();
+  if (!current?.refreshToken) {
+    writeSession(null);
+    return null;
+  }
+
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const data = await callAuthEndpoint('/auth/refresh', { refresh_token: current.refreshToken });
+      const session = createSession(data);
+      writeSession(session);
+      return session;
+    } catch (error) {
+      console.warn('[Auth] 刷新Token失败:', error);
+      writeSession(null);
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }
 
 export default {
@@ -214,5 +314,7 @@ export default {
   isAdmin,
   verifyToken,
   sendVerificationCode,
-  resetPassword
+  resetPassword,
+  ensureAuthSession,
+  refreshSession
 };
