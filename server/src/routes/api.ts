@@ -10,6 +10,8 @@ import logger from '../utils/logger';
 import { ErrorCode, createErrorResponse, createSuccessResponse } from '../utils/error-codes';
 import { validateCSRF } from '../middleware/csrf';
 import { authenticateUser, optionalAuth } from '../middleware/auth';
+import { idempotency, saveIdempotencyResult, checkIdempotency } from '../middleware/idempotency';
+import { businessIdService } from '../services/BusinessIdService';
 
 // ============================================
 // API 路由
@@ -173,7 +175,7 @@ export function createApiRouter(
   // ============================================
 
   // POST /api/order/create - 创建订单
-  router.post('/order/create', authenticateUser, validateCSRF, async (req: any, res: any) => {
+  router.post('/order/create', authenticateUser, validateCSRF, idempotency(), async (req: any, res: any) => {
     const userId = req.userId;
     const {
       productCode,
@@ -183,8 +185,9 @@ export function createApiRouter(
       price,
       leverage = 10,
       stopLoss,
-      takeProfit
-    }: CreateOrderRequest = req.body;
+      takeProfit,
+      businessId
+    }: CreateOrderRequest & { businessId?: string } = req.body;
 
     // 完整参数校验
     if (!productCode || !type || !direction || !quantity) {
@@ -244,6 +247,32 @@ export function createApiRouter(
     }
 
     const currentPrice = marketData.lastPrice;
+    
+    // 幂等性检查 - 防止重复下单
+    let finalBusinessId = businessId;
+    if (!finalBusinessId) {
+      finalBusinessId = orderManager.generateOrderBusinessId(userId, productCode, direction as OrderDirection);
+    }
+    
+    const idempotencyCheck = await businessIdService.checkDuplicateOperation({
+      operationType: 'CREATE_ORDER',
+      userId,
+      resourceType: 'ORDER',
+      resourceId: finalBusinessId,
+      ttl: 3600
+    });
+    
+    if (idempotencyCheck.isDuplicate && idempotencyCheck.existingRecord) {
+      logger.info('[API] 检测到重复订单请求，返回已缓存结果', {
+        userId,
+        businessId: finalBusinessId
+      });
+      
+      const existingResult = idempotencyCheck.existingRecord.result;
+      return res.json(success(existingResult, '订单已存在（幂等性保护）'));
+    }
+    
+    const businessIdKey = idempotencyCheck.businessId;
 
     // 计算所需保证金
     const orderPrice = type === OrderType.LIMIT && price ? price : currentPrice;
@@ -252,11 +281,13 @@ export function createApiRouter(
     // 风险检查
     const riskCheck = riskManager.checkOrderRisk(userId, margin, leverage);
     if (!riskCheck.canTrade) {
+      await businessIdService.updateBusinessIdStatus(businessIdKey, 'failed', null, riskCheck.message);
       return res.status(403).json(createErrorResponse(ErrorCode.INSUFFICIENT_MARGIN, riskCheck.message));
     }
 
     // 冻结保证金
     if (!riskManager.freezeMargin(userId, margin)) {
+      await businessIdService.updateBusinessIdStatus(businessIdKey, 'failed', null, '保证金冻结失败');
       return res.status(403).json(createErrorResponse(ErrorCode.MARGIN_LOCK_FAILED, '保证金冻结失败'));
     }
 
@@ -270,7 +301,8 @@ export function createApiRouter(
       leverage,
       price,
       stopLoss,
-      takeProfit
+      takeProfit,
+      finalBusinessId
     );
 
     // 立即撮合市价单（使用锁防止竞态条件）
@@ -286,36 +318,46 @@ export function createApiRouter(
             riskManager.releaseMargin(userId, margin);
           });
           orderManager.rejectOrder(order.id, '撮合失败');
+          await businessIdService.updateBusinessIdStatus(businessIdKey, 'failed', null, '撮合失败');
           return res.status(500).json(createErrorResponse(ErrorCode.INTERNAL_ERROR, '订单撮合失败'));
         }
 
-        return res.json(success({
+        const orderResult = {
           orderId: order.id,
+          businessId: order.businessId,
           status: order.status,
           filledPrice: trade.price,
           filledQuantity: trade.quantity,
           marginUsed: trade.margin,
           fee: trade.fee,
           tradeId: trade.id
-        }, '订单已成交'));
+        };
+        
+        await businessIdService.updateBusinessIdStatus(businessIdKey, 'completed', orderResult);
+        return res.json(success(orderResult, '订单已成交'));
       } catch (err) {
         // 撮合失败，释放保证金
         riskManager.releaseMargin(userId, margin);
         orderManager.rejectOrder(order.id, '撮合失败');
+        await businessIdService.updateBusinessIdStatus(businessIdKey, 'failed', null, '撮合失败');
         return res.status(500).json(createErrorResponse(ErrorCode.INTERNAL_ERROR, '订单撮合失败'));
       }
     }
 
     // 限价单返回待成交状态
-    res.json(success({
+    const orderResult = {
       orderId: order.id,
+      businessId: order.businessId,
       status: order.status,
       marginUsed: margin
-    }, '限价单已创建，等待成交'));
+    };
+    
+    await businessIdService.updateBusinessIdStatus(businessIdKey, 'completed', orderResult);
+    res.json(success(orderResult, '限价单已创建，等待成交'));
   });
 
   // POST /api/order/cancel - 取消订单（使用锁防止并发超额释放保证金）
-  router.post('/order/cancel', authenticateUser, validateCSRF, async (req: any, res: any) => {
+  router.post('/order/cancel', authenticateUser, validateCSRF, idempotency(), async (req: any, res: any) => {
     const { orderId } = req.body;
 
     if (!orderId) {
@@ -451,7 +493,7 @@ export function createApiRouter(
   });
 
   // POST /api/position/close - 平仓
-  router.post('/position/close', authenticateUser, validateCSRF, (req: any, res: any) => {
+  router.post('/position/close', authenticateUser, validateCSRF, idempotency(), async (req: any, res: any) => {
     const userId = req.userId;
     const { positionId } = req.body;
 
@@ -492,7 +534,7 @@ export function createApiRouter(
   });
 
   // POST /api/position/update-sl-tp - 修改止盈止损
-  router.post('/position/update-sl-tp', authenticateUser, validateCSRF, (req: any, res: any) => {
+  router.post('/position/update-sl-tp', authenticateUser, validateCSRF, idempotency(), async (req: any, res: any) => {
     const userId = req.userId;
     const { positionId, stopLoss, takeProfit }: UpdateSlTpRequest = req.body;
 

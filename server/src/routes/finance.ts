@@ -6,6 +6,8 @@ import { findOne, query, transaction } from '../config/database';
 import { getAccount } from '../services/finance.service';
 import { TRADING_CONFIG } from '../config/app.config';
 import { authenticateUser } from '../middleware/auth';
+import { idempotency } from '../middleware/idempotency';
+import { businessIdService } from '../services/BusinessIdService';
 
 const router = express.Router();
 
@@ -16,13 +18,30 @@ const router = express.Router();
 /**
  * 创建充值申请
  */
-router.post('/deposit', authenticateUser, async (req: express.Request, res: express.Response) => {
+router.post('/deposit', authenticateUser, idempotency(), async (req: express.Request, res: express.Response) => {
   try {
     const userId = req.userId;
     const { amount, method, bankAccount, bankName, accountName, usdtAddress } = req.body;
 
     if (!userId || !amount || !method) {
       return res.status(400).json(createErrorResponse(ErrorCode.MISSING_PARAM));
+    }
+
+    // 幂等性检查
+    const idempotencyKey = req.headers['idempotency-key'] as string;
+    if (idempotencyKey) {
+      const duplicateCheck = await businessIdService.checkDuplicateOperation({
+        operationType: 'DEPOSIT',
+        userId,
+        resourceType: 'DEPOSIT_ORDER',
+        resourceId: idempotencyKey,
+        ttl: 3600
+      });
+
+      if (duplicateCheck.isDuplicate && duplicateCheck.existingRecord) {
+        logger.info('[Finance] 检测到重复充值申请', { userId, idempotencyKey });
+        return res.json(createSuccessResponse(duplicateCheck.existingRecord.result, '充值申请已存在（幂等性保护）'));
+      }
     }
 
     // 验证金额
@@ -76,13 +95,30 @@ router.post('/deposit', authenticateUser, async (req: express.Request, res: expr
 /**
  * 创建提现申请
  */
-router.post('/withdraw', authenticateUser, async (req: express.Request, res: express.Response) => {
+router.post('/withdraw', authenticateUser, idempotency(), async (req: express.Request, res: express.Response) => {
   try {
     const userId = req.userId;
     const { amount, method, bankAccount, bankName, accountName, usdtAddress } = req.body;
 
     if (!userId || !amount || !method) {
       return res.status(400).json(createErrorResponse(ErrorCode.MISSING_PARAM));
+    }
+
+    // 幂等性检查
+    const idempotencyKey = req.headers['idempotency-key'] as string;
+    if (idempotencyKey) {
+      const duplicateCheck = await businessIdService.checkDuplicateOperation({
+        operationType: 'WITHDRAW',
+        userId,
+        resourceType: 'WITHDRAW_ORDER',
+        resourceId: idempotencyKey,
+        ttl: 3600
+      });
+
+      if (duplicateCheck.isDuplicate && duplicateCheck.existingRecord) {
+        logger.info('[Finance] 检测到重复提现申请', { userId, idempotencyKey });
+        return res.json(createSuccessResponse(duplicateCheck.existingRecord.result, '提现申请已存在（幂等性保护）'));
+      }
     }
 
     // 验证金额

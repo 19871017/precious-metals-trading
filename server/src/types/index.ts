@@ -24,6 +24,7 @@ export enum OrderStatus {
 
 export interface Order {
   id: string;
+  businessId?: string;        // 业务ID（用于幂等性）
   userId: string;
   productCode: string;        // 产品代码，如 XAUUSD
   type: OrderType;

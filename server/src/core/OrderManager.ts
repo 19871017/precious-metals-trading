@@ -11,6 +11,7 @@ import {
   MarketData
 } from '../types';
 import { Calculator } from '../utils/calculator';
+import { businessIdService } from '../services/BusinessIdService';
 
 // ============================================
 // 订单管理器
@@ -26,7 +27,7 @@ export class OrderManager {
   }
 
   /**
-   * 创建订单
+   * 创建订单（带业务ID）
    */
   createOrder(
     userId: string,
@@ -37,10 +38,12 @@ export class OrderManager {
     leverage: number,
     price?: number,
     stopLoss?: number,
-    takeProfit?: number
+    takeProfit?: number,
+    businessId?: string
   ): Order {
     const order: Order = {
       id: uuidv4(),
+      businessId: businessId || this.generateOrderBusinessId(userId, productCode, direction),
       userId,
       productCode,
       type,
@@ -48,7 +51,7 @@ export class OrderManager {
       quantity,
       price,
       leverage,
-      margin: 0, // 将在撮合时计算
+      margin: 0,
       stopLoss,
       takeProfit,
       status: OrderStatus.CREATED,
@@ -59,6 +62,32 @@ export class OrderManager {
 
     this.orders.set(order.id, order);
     return order;
+  }
+
+  /**
+   * 生成订单业务ID（公共方法）
+   */
+  generateOrderBusinessId(
+    userId: string,
+    productCode: string,
+    direction: OrderDirection
+  ): string {
+    const timestamp = Date.now().toString(36);
+    const random = Math.random().toString(36).substring(2, 11);
+    return `ORD${userId.substring(0, 4)}${productCode}${direction === OrderDirection.BUY ? 'B' : 'S'}${timestamp}${random}`.toUpperCase();
+  }
+
+  /**
+   * 生成订单业务ID
+   */
+  private generateOrderBusinessId(
+    userId: string,
+    productCode: string,
+    direction: OrderDirection
+  ): string {
+    const timestamp = Date.now().toString(36);
+    const random = Math.random().toString(36).substring(2, 11);
+    return `ORD${userId.substring(0, 4)}${productCode}${direction === OrderDirection.BUY ? 'B' : 'S'}${timestamp}${random}`.toUpperCase();
   }
 
   /**
