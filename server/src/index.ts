@@ -12,6 +12,8 @@ import { PositionManager, OrderManager } from './core/OrderManager';
 import { RiskManager } from './core/RiskManager';
 import { MarketDataService } from './services/MarketDataService';
 import { stopLossTakeProfitService } from './services/StopLossTakeProfitService';
+import { liquidationScheduler } from './services/LiquidationSchedulerV2';
+import { liquidationPriorityScheduler } from './services/LiquidationPriorityScheduler';
 import { createApiRouter } from './routes/api';
 import { createShuhaiRouter } from './routes/shuhai';
 import authRouter from './routes/auth';
@@ -19,6 +21,7 @@ import adminRouter from './routes/admin';
 import aiRouter from './routes/ai';
 import portfolioRouter from './routes/portfolio';
 import riskWorkerPoolRouter from './routes/risk-worker-pool';
+import liquidationRouter from './routes/liquidation-priority';
 import { systemPriorityController, Priority } from './services/SystemPriorityController';
 import { priorityRateLimit, systemLoadGuard } from './middleware/priority-rate-limit';
 import { orderRateLimit, getGlobalQueueStatus, resetUserRateLimit, resetGlobalQueue } from './middleware/order-rate-limit';
@@ -203,6 +206,24 @@ setInterval(() => {
 stopLossTakeProfitService.start();
 
 // ============================================
+// 启动强平调度系统
+// ============================================
+
+(async () => {
+  try {
+    logger.info('[Main] 启动自动强平调度系统');
+    await liquidationScheduler.start();
+    logger.info('[Main] 自动强平调度系统启动成功');
+
+    logger.info('[Main] 启动优先级强平调度系统');
+    await liquidationPriorityScheduler.start();
+    logger.info('[Main] 优先级强平调度系统启动成功');
+  } catch (error) {
+    logger.error('[Main] 启动强平调度系统失败', error);
+  }
+})();
+
+// ============================================
 // 路由配置
 // ============================================
 
@@ -321,6 +342,9 @@ app.use('/portfolio', apiLimiter, portfolioRouter);
 // Risk Engine Worker Pool 管理路由
 app.use('/risk', riskWorkerPoolRouter);
 
+// 优先级强平队列管理路由
+app.use('/liquidation', liquidationRouter);
+
 // API路由(交易接口应用限流)
 app.use('/api/order', tradingLimiter);
 app.use('/api/position', tradingLimiter);
@@ -409,6 +433,14 @@ const gracefulShutdown = async (signal: string) => {
     // 停止 Risk Engine Worker Pool
     console.log('[Shutdown] 停止 Risk Engine Worker Pool...');
     await riskEngineWorkerPoolManager.stop();
+    
+    // 停止优先级强平调度系统
+    console.log('[Shutdown] 停止优先级强平调度系统...');
+    await liquidationPriorityScheduler.stop();
+    
+    // 停止自动强平调度系统
+    console.log('[Shutdown] 停止自动强平调度系统...');
+    await liquidationScheduler.stop();
     
     // 停止行情服务
     console.log('[Shutdown] 停止行情服务...');
