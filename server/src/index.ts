@@ -17,6 +17,7 @@ import { liquidationPriorityScheduler } from './services/LiquidationPrioritySche
 import { watchdogService } from './services/WatchdogService';
 import { degradationService } from './services/DegradationService';
 import { chaosTestService } from './services/ChaosTestService';
+import { eventStoreService } from './services/EventStoreService';
 import { createApiRouter } from './routes/api';
 import { createShuhaiRouter } from './routes/shuhai';
 import authRouter from './routes/auth';
@@ -28,10 +29,12 @@ import liquidationRouter from './routes/liquidation-priority';
 import watchdogRouter from './routes/watchdog';
 import degradationRouter from './routes/degradation';
 import chaosTestRouter from './routes/chaos-test';
+import eventStoreRouter from './routes/event-store';
 import { systemPriorityController, Priority } from './services/SystemPriorityController';
 import { priorityRateLimit, systemLoadGuard } from './middleware/priority-rate-limit';
 import { orderRateLimit, getGlobalQueueStatus, resetUserRateLimit, resetGlobalQueue } from './middleware/order-rate-limit';
 import { riskEngineWorkerPoolManager } from './services/RiskEngineWorkerPoolManager';
+import { eventStoreService } from './services/EventStoreService';
 
 dotenv.config();
 
@@ -131,9 +134,21 @@ const marketService = new MarketDataService();
     await systemPriorityController.initialize();
     logger.info('[Main] 优先级控制器初始化成功');
 
-    logger.info('[Main] 初始化 Risk Engine Worker Pool');
+    logger.info('[Main] 启动 Risk Engine Worker Pool');
     await riskEngineWorkerPoolManager.initialize();
     logger.info('[Main] Risk Engine Worker Pool 初始化成功');
+
+    logger.info('[Main] 初始化事件存储服务');
+    await eventStoreService.initialize();
+    logger.info('[Main] 事件存储服务初始化成功');
+
+    logger.info('[Main] 启动 Watchdog 服务');
+    await watchdogService.start();
+    logger.info('[Main] Watchdog 服务启动成功');
+
+    logger.info('[Main] 启动系统降级机制');
+    await degradationService.start();
+    logger.info('[Main] 系统降级机制启动成功');
   } catch (error) {
     logger.error('[Main] 初始化失败', error);
   }
@@ -378,6 +393,9 @@ app.use('/system', degradationRouter);
 // 混沌测试管理路由
 app.use('/system', chaosTestRouter);
 
+// 事件存储管理路由
+app.use('/events', eventStoreRouter);
+
 // API路由(交易接口应用限流)
 app.use('/api/order', tradingLimiter);
 app.use('/api/position', tradingLimiter);
@@ -471,25 +489,21 @@ const gracefulShutdown = async (signal: string) => {
     console.log('[Shutdown] 停止优先级强平调度系统...');
     await liquidationPriorityScheduler.stop();
     
-    // 停止自动强平调度系统
-    console.log('[Shutdown] 停止自动强平调度系统...');
-    await liquidationScheduler.stop();
-    
-     // 停止 Watchdog 服务
-    console.log('[Shutdown] 停止 Watchdog 服务...');
-    await watchdogService.stop();
-    
-    // 停止系统降级机制
-    console.log('[Shutdown] 停止系统降级机制...');
-    await degradationService.stop();
-    
-    // 停止行情服务
-    console.log('[Shutdown] 停止行情服务...');
-    marketService.stop();
-    
-    // 停止止盈止损服务
-    console.log('[Shutdown] 停止止盈止损服务...');
-    stopLossTakeProfitService.stop();
+     // 停止自动强平调度系统
+     console.log('[Shutdown] 停止自动强平调度系统...');
+     await liquidationScheduler.stop();
+     
+     // 停止事件存储服务
+     console.log('[Shutdown] 停止事件存储服务...');
+     await eventStoreService.stop();
+     
+     // 停止行情服务
+     console.log('[Shutdown] 停止行情服务...');
+     marketService.stop();
+     
+     // 停止止盈止损服务
+     console.log('[Shutdown] 停止止盈止损服务...');
+     stopLossTakeProfitService.stop();
     
     // 关闭 HTTP 服务器
     console.log('[Shutdown] 关闭 HTTP 服务器...');
