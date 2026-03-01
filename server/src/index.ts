@@ -16,6 +16,7 @@ import { liquidationScheduler } from './services/LiquidationSchedulerV2';
 import { liquidationPriorityScheduler } from './services/LiquidationPriorityScheduler';
 import { watchdogService } from './services/WatchdogService';
 import { degradationService } from './services/DegradationService';
+import { chaosTestService } from './services/ChaosTestService';
 import { createApiRouter } from './routes/api';
 import { createShuhaiRouter } from './routes/shuhai';
 import authRouter from './routes/auth';
@@ -26,6 +27,7 @@ import riskWorkerPoolRouter from './routes/risk-worker-pool';
 import liquidationRouter from './routes/liquidation-priority';
 import watchdogRouter from './routes/watchdog';
 import degradationRouter from './routes/degradation';
+import chaosTestRouter from './routes/chaos-test';
 import { systemPriorityController, Priority } from './services/SystemPriorityController';
 import { priorityRateLimit, systemLoadGuard } from './middleware/priority-rate-limit';
 import { orderRateLimit, getGlobalQueueStatus, resetUserRateLimit, resetGlobalQueue } from './middleware/order-rate-limit';
@@ -372,6 +374,9 @@ app.use('/system', watchdogRouter);
 
 // 系统降级机制管理路由
 app.use('/system', degradationRouter);
+
+// 混沌测试管理路由
+app.use('/system', chaosTestRouter);
 
 // API路由(交易接口应用限流)
 app.use('/api/order', tradingLimiter);
