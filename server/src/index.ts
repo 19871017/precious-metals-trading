@@ -18,9 +18,11 @@ import authRouter from './routes/auth';
 import adminRouter from './routes/admin';
 import aiRouter from './routes/ai';
 import portfolioRouter from './routes/portfolio';
+import riskWorkerPoolRouter from './routes/risk-worker-pool';
 import { systemPriorityController, Priority } from './services/SystemPriorityController';
 import { priorityRateLimit, systemLoadGuard } from './middleware/priority-rate-limit';
 import { orderRateLimit, getGlobalQueueStatus, resetUserRateLimit, resetGlobalQueue } from './middleware/order-rate-limit';
+import { riskEngineWorkerPoolManager } from './services/RiskEngineWorkerPoolManager';
 
 dotenv.config();
 
@@ -119,8 +121,12 @@ const marketService = new MarketDataService();
     logger.info('[Main] 初始化优先级控制器');
     await systemPriorityController.initialize();
     logger.info('[Main] 优先级控制器初始化成功');
+
+    logger.info('[Main] 初始化 Risk Engine Worker Pool');
+    await riskEngineWorkerPoolManager.initialize();
+    logger.info('[Main] Risk Engine Worker Pool 初始化成功');
   } catch (error) {
-    logger.error('[Main] 优先级控制器初始化失败', error);
+    logger.error('[Main] 初始化失败', error);
   }
 })();
 
@@ -312,6 +318,9 @@ app.use('/ai', apiLimiter, aiRouter);
 // 投资组合路由
 app.use('/portfolio', apiLimiter, portfolioRouter);
 
+// Risk Engine Worker Pool 管理路由
+app.use('/risk', riskWorkerPoolRouter);
+
 // API路由(交易接口应用限流)
 app.use('/api/order', tradingLimiter);
 app.use('/api/position', tradingLimiter);
@@ -396,6 +405,10 @@ const gracefulShutdown = async (signal: string) => {
     // 停止优先级控制器
     console.log('[Shutdown] 停止优先级控制器...');
     await systemPriorityController.stop();
+    
+    // 停止 Risk Engine Worker Pool
+    console.log('[Shutdown] 停止 Risk Engine Worker Pool...');
+    await riskEngineWorkerPoolManager.stop();
     
     // 停止行情服务
     console.log('[Shutdown] 停止行情服务...');

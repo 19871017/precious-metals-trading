@@ -2,6 +2,12 @@ import { query, transaction } from '../config/database';
 import redis from '../utils/redis';
 import logger from '../utils/logger';
 import { acquireBalanceLock } from '../utils/distributed-lock';
+import { RiskEngineQueueProducer, riskEngineQueueProducer } from './RiskEngineQueueProducer';
+import {
+  RiskCheckJobData,
+  RiskEngineWorkerPool,
+  riskEngineWorkerPool,
+} from './RiskEngineWorkerPool';
 
 // ============================================
 // 风险检查结果类型定义
@@ -625,6 +631,75 @@ export class RiskEngine {
       avgMarginUsage,
       dangerAccounts,
     };
+  }
+
+  /**
+   * 通过 Worker Pool 异步执行风控检查
+   */
+  async validateWithWorker(
+    request: RiskCheckRequest,
+    priority: number = 5
+  ): Promise<{ jobId: string }> {
+    try {
+      const jobData: RiskCheckJobData = {
+        userId: String(request.userId),
+        productCode: request.productCode,
+        operation: request.operation,
+        quantity: request.quantity,
+        leverage: request.leverage,
+        price: request.price,
+        direction: request.direction,
+        priority,
+      };
+
+      const job = await riskEngineQueueProducer.submitRiskCheck(jobData);
+
+      logger.info('[RiskEngine] 风控检查任务已提交到 Worker Pool', {
+        jobId: job.id,
+        userId: request.userId,
+        operation: request.operation,
+      });
+
+      return { jobId: String(job.id) };
+    } catch (error) {
+      logger.error('[RiskEngine] 提交风控检查任务到 Worker Pool 失败', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 等待 Worker Pool 完成风控检查
+   */
+  async waitForValidationResult(
+    jobId: string,
+    timeout: number = 5000
+  ): Promise<RiskCheckResult> {
+    try {
+      const result = await riskEngineQueueProducer.waitForResult(jobId, timeout);
+
+      logger.info('[RiskEngine] Worker Pool 风控检查完成', {
+        jobId,
+        passed: result.passed,
+        riskLevel: result.riskLevel,
+      });
+
+      return result;
+    } catch (error) {
+      logger.error('[RiskEngine] 等待 Worker Pool 风控检查结果失败', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 通过 Worker Pool 执行风控检查（同步等待结果）
+   */
+  async validateAsync(
+    request: RiskCheckRequest,
+    priority: number = 5,
+    timeout: number = 5000
+  ): Promise<RiskCheckResult> {
+    const { jobId } = await this.validateWithWorker(request, priority);
+    return await this.waitForValidationResult(jobId, timeout);
   }
 }
 
