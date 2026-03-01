@@ -15,6 +15,7 @@ import { stopLossTakeProfitService } from './services/StopLossTakeProfitService'
 import { liquidationScheduler } from './services/LiquidationSchedulerV2';
 import { liquidationPriorityScheduler } from './services/LiquidationPriorityScheduler';
 import { watchdogService } from './services/WatchdogService';
+import { degradationService } from './services/DegradationService';
 import { createApiRouter } from './routes/api';
 import { createShuhaiRouter } from './routes/shuhai';
 import authRouter from './routes/auth';
@@ -24,6 +25,7 @@ import portfolioRouter from './routes/portfolio';
 import riskWorkerPoolRouter from './routes/risk-worker-pool';
 import liquidationRouter from './routes/liquidation-priority';
 import watchdogRouter from './routes/watchdog';
+import degradationRouter from './routes/degradation';
 import { systemPriorityController, Priority } from './services/SystemPriorityController';
 import { priorityRateLimit, systemLoadGuard } from './middleware/priority-rate-limit';
 import { orderRateLimit, getGlobalQueueStatus, resetUserRateLimit, resetGlobalQueue } from './middleware/order-rate-limit';
@@ -216,6 +218,10 @@ stopLossTakeProfitService.start();
     logger.info('[Main] 启动 Watchdog 服务');
     await watchdogService.start();
     logger.info('[Main] Watchdog 服务启动成功');
+
+    logger.info('[Main] 启动系统降级机制');
+    await degradationService.start();
+    logger.info('[Main] 系统降级机制启动成功');
   } catch (error) {
     logger.error('[Main] 启动 Watchdog 服务失败', error);
   }
@@ -364,6 +370,9 @@ app.use('/liquidation', liquidationRouter);
 // Watchdog 服务管理路由
 app.use('/system', watchdogRouter);
 
+// 系统降级机制管理路由
+app.use('/system', degradationRouter);
+
 // API路由(交易接口应用限流)
 app.use('/api/order', tradingLimiter);
 app.use('/api/position', tradingLimiter);
@@ -461,9 +470,13 @@ const gracefulShutdown = async (signal: string) => {
     console.log('[Shutdown] 停止自动强平调度系统...');
     await liquidationScheduler.stop();
     
-    // 停止 Watchdog 服务
+     // 停止 Watchdog 服务
     console.log('[Shutdown] 停止 Watchdog 服务...');
     await watchdogService.stop();
+    
+    // 停止系统降级机制
+    console.log('[Shutdown] 停止系统降级机制...');
+    await degradationService.stop();
     
     // 停止行情服务
     console.log('[Shutdown] 停止行情服务...');
