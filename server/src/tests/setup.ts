@@ -1,20 +1,40 @@
-import { Pool, PoolClient } from 'pg';
-import Redis from 'ioredis';
 import { jest } from '@jest/globals';
 
-// Mock database
+const mockQuery = jest.fn();
+const mockTransaction = jest.fn();
+const mockFindOne = jest.fn();
+const mockPoolConnect = jest.fn();
+
+// Mock database module
 jest.mock('../config/database', () => ({
-  query: jest.fn(),
-  transaction: jest.fn(),
+  __esModule: true,
+  query: mockQuery,
+  transaction: mockTransaction,
+  findOne: mockFindOne,
+  dbAvailable: true,
+  pool: {
+    connect: mockPoolConnect,
+  },
 }));
 
-// Mock Redis
+// Mock Redis module
+const mockRedis = {
+  get: jest.fn(),
+  set: jest.fn(),
+  del: jest.fn(),
+  expire: jest.fn(),
+  incr: jest.fn(),
+  decr: jest.fn(),
+};
+
 jest.mock('../utils/redis', () => ({
-  default: new Redis(),
+  __esModule: true,
+  default: mockRedis,
 }));
 
-// Mock logger
+// Mock logger (silent)
 jest.mock('../utils/logger', () => ({
+  __esModule: true,
   default: {
     info: jest.fn(),
     warn: jest.fn(),
@@ -23,11 +43,14 @@ jest.mock('../utils/logger', () => ({
   },
 }));
 
-// Global test setup
 beforeEach(() => {
-  jest.clearAllMocks();
-});
-
-afterEach(() => {
-  jest.restoreAllMocks();
+  mockQuery.mockReset();
+  mockTransaction.mockReset();
+  mockFindOne.mockReset();
+  mockPoolConnect.mockReset();
+  Object.values(mockRedis).forEach((fn: any) => {
+    if (typeof fn.mockReset === 'function') {
+      fn.mockReset();
+    }
+  });
 });

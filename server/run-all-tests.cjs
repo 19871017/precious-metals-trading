@@ -14,12 +14,44 @@ const testFiles = [
     file: 'src/tests/RiskEngine.test.ts',
   },
   {
+    name: 'RiskEngine Worker Pool',
+    file: 'src/tests/RiskEngineWorkerPool.test.ts',
+  },
+  {
+    name: 'RiskEngine Worker Pool Manager',
+    file: 'src/tests/RiskEngineWorkerPoolManager.test.ts',
+  },
+  {
+    name: 'RiskManager',
+    file: 'src/tests/RiskManager.test.ts',
+  },
+  {
     name: 'LiquidationScheduler (强平调度器)',
     file: 'src/tests/LiquidationScheduler.test.ts',
   },
   {
+    name: 'LiquidationScheduler V2',
+    file: 'src/tests/LiquidationSchedulerV2.test.ts',
+  },
+  {
+    name: 'LiquidationPriorityScheduler',
+    file: 'src/tests/LiquidationPriorityScheduler.test.ts',
+  },
+  {
+    name: 'StopLossTakeProfitService',
+    file: 'src/tests/StopLossTakeProfitService.test.ts',
+  },
+  {
     name: 'AccountService (账户服务)',
     file: 'src/tests/AccountService.test.ts',
+  },
+  {
+    name: 'Finance Service',
+    file: 'src/tests/finance.service.test.ts',
+  },
+  {
+    name: 'AuditLog Service',
+    file: 'src/tests/AuditLogService.test.ts',
   },
   {
     name: 'OrderManager (订单管理器)',
@@ -45,7 +77,7 @@ for (const test of testFiles) {
   console.log('='.repeat(70));
   
   try {
-    execSync(`npx jest --testPathPattern="${test.file}" --preset=ts-jest --passWithNoTests`, {
+    execSync(`npx jest --testPathPatterns="${test.file}" --preset=ts-jest --passWithNoTests`, {
       stdio: 'pipe',
       cwd: path.resolve(__dirname, '.'),
       encoding: 'utf8',
